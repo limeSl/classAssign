@@ -504,6 +504,9 @@ with st.container(border=True):
         else:
             st.session_state.constraints.append(Constraint(kind=kind, uids=list(selected_uids)))
             st.success(f"{kind} 조건 1개가 추가되었습니다. (대상 {len(selected_uids)}명)")
+            st.session_state.selected_uids_for_constraint = []
+            st.rerun()
+
 
 # 조건 목록 표시/삭제
 st.subheader("📌 추가된 조건 목록")
