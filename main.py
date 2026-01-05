@@ -5,7 +5,7 @@ import streamlit as st
 
 st.set_page_config(page_title="반편성 도우미", page_icon="🏫", layout="wide")
 st.title("🏫 반편성 도우미")
-st.caption("엑셀 업로드 → 반(B열) 기준 표 분리 / 번호순·성적순 정렬 / 이름 한글만 보기 / 반별 평균점수")
+st.caption("엑셀 파일을 업로드 하시면 제가 반편성을 도와드립니다.")
 
 # -----------------------------
 # 유틸
