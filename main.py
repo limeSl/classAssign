@@ -448,47 +448,53 @@ for tab, cls in zip(tabs, classes):
         )
 
 # =============================
-# 조건 추가 UI
+# 조건 추가 UI (전체 학생 기준, 별도 검색창 없음)
 # =============================
 st.subheader("🧩 조건 추가(묶기 / 떨어뜨리기)")
 
 with st.container(border=True):
-    cc1, cc2 = st.columns([1, 2])
-    with cc1:
-        kind = st.radio("조건 종류", ["묶기", "떨어뜨리기"], horizontal=False)
-    with cc2:
-        query = st.text_input("이름 검색(한글 가능)", placeholder="예: 김민지")
+    kind = st.radio("조건 종류", ["묶기", "떨어뜨리기"], horizontal=True, key="constraint_kind")
 
-    # 검색 결과: 한글이름 기준 (부분일치)
-    # - query가 비어 있으면 상위 몇명만 노출
-    search_df = view_base.copy()
-    # 한글만 컬럼으로 검색
-    search_df["_search_name"] = df_all["이름(한글만)"]
-    if query.strip():
-        q = query.strip()
-        search_df = search_df[search_df["_search_name"].astype(str).str.contains(q, na=False)]
-    else:
-        search_df = search_df.head(20)
+    # ✅ 전체 학생 기준 옵션 목록 만들기 (탭/반 무관)
+    # - 표시 이름은 현재 name_mode(원본/한글만) 설정을 따름
+    # - multiselect는 기본적으로 타이핑 검색 지원 (따로 검색창 불필요)
+    base = view_base.copy()  # view_base는 df_all 기반으로 만들어져 있고, 이름/정렬 반영된 DF
 
-    # 표시 컬럼: 이전반, 이름, 성별, 점수
-    show_cols = ["_uid", "이전반(표시)", "이름", "성별", "점수", "반", "번호"]
-    show_df = search_df[show_cols].copy()
-    show_df = show_df.rename(columns={"이전반(표시)": "이전반"})
-
-    st.caption("검색 결과에서 학생을 선택하세요. (여러 명 선택 가능)")
-    # 선택 UI: uid를 value로, 사람이 읽기 쉬운 라벨 제공
-    options = []
+    # 선택 라벨에 필요한 컬럼 준비
+    # 이전반(표시), 이름, 성별, 점수, 현재반/번호를 함께 보여주기
+    # uid -> label 매핑
+    options = base["_uid"].tolist()
     uid_to_label = {}
-    for _, r in show_df.iterrows():
+
+    for _, r in base.iterrows():
         uid = r["_uid"]
-        label = f"{r['이전반']} | {r['이름']} | {r['성별']} | 점수:{'' if pd.isna(r['점수']) else int(r['점수']) if float(r['점수']).is_integer() else r['점수']} | 현재 {r['반']}반 {'' if pd.isna(r['번호']) else int(r['번호'])}번"
-        options.append(uid)
-        uid_to_label[uid] = label
+        prev_disp = r.get("이전반(표시)", "")
+        nm = r.get("이름", "")
+        gender = r.get("성별", "")
+        score = r.get("점수", None)
+
+        # 점수 표시 포맷
+        if pd.isna(score):
+            score_txt = ""
+        else:
+            try:
+                score_f = float(score)
+                score_txt = str(int(score_f)) if score_f.is_integer() else str(score_f)
+            except Exception:
+                score_txt = str(score)
+
+        cur_class = r.get("반", "")
+        num = r.get("번호", "")
+        num_txt = "" if pd.isna(num) else str(int(num)) if float(num).is_integer() else str(num)
+
+        # ✅ 멀티셀렉트에서 검색하기 좋게: (이름) 앞쪽에 두고 정보 붙이기
+        uid_to_label[uid] = f"{nm} | {prev_disp} | {gender} | 점수:{score_txt} | 현재 {cur_class}반 {num_txt}번"
 
     selected_uids = st.multiselect(
-        "선택된 학생",
+        "학생 선택 (여기서 바로 검색해서 선택하세요. 예: 이름 타이핑)",
         options=options,
         format_func=lambda x: uid_to_label.get(x, x),
+        key="selected_uids_for_constraint",
     )
 
     add_btn = st.button("➕ 조건 추가", use_container_width=True)
