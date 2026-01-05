@@ -359,6 +359,8 @@ def adjust_classes(df: pd.DataFrame, constraints: List[Constraint], seed=7, step
 # =============================
 # 세션 상태 초기화
 # =============================
+if "did_adjust" not in st.session_state:
+    st.session_state.did_adjust = False
 if "constraints" not in st.session_state:
     st.session_state.constraints: List[Constraint] = []
 if "result_df" not in st.session_state:
@@ -429,18 +431,21 @@ if not classes:
     st.error("반(B열) 값이 비어 있습니다.")
     st.stop()
 
-# =============================
-# 반별 평균 점수 요약
-# =============================
-st.subheader("📊 반별 평균점수")
-avg_df = (
-    view_base.groupby("반")["점수"]
-    .mean()
-    .reset_index()
-    .rename(columns={"점수": "평균점수"})
-)
-avg_df["평균점수"] = avg_df["평균점수"].round(2)
-st.dataframe(avg_df.sort_values("반"), use_container_width=True)
+# ---- 업로드 직후(조정 전): 반 테이블만 표시 ----
+st.subheader("📋 반별 학생 목록")
+
+# view_base(정렬/이름표시 반영된 DF) 만들고 classes 구한 뒤
+tabs = st.tabs([f"{c}반" for c in classes])
+for tab, cls in zip(tabs, classes):
+    with tab:
+        df_cls = view_base[view_base["반"] == cls].copy()
+        st.write(f"**인원:** {len(df_cls)}")
+        # (평균점수는 여기서 표시하지 않음)
+        st.dataframe(
+            df_cls[["_excel_row", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)"]]
+            .rename(columns={"_excel_row": "엑셀행번호", "이전반(표시)": "이전반"}),
+            use_container_width=True
+        )
 
 # =============================
 # 조건 추가 UI
@@ -563,10 +568,44 @@ if run:
 if st.session_state.result_df is not None:
     res = st.session_state.result_df.copy()
 
-    st.subheader("✅ 조정된 반편성 결과")
+    # 1) 설정
+    st.subheader("설정(조정 결과 보기)")
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        name_mode_after = st.radio("이름 표시", ["원본", "한글만"], horizontal=True, key="name_mode_after")
+    with c2:
+        sort_mode_after = st.radio("정렬 기준", ["번호순", "성적순"], horizontal=True, key="sort_mode_after")
 
-    # 반별 평균 점수(조정 후)
-    st.caption("조정 후 반별 평균점수")
+    # 설정 반영 (res는 내부적으로 원본/한글 이름 컬럼을 갖고 있어야 함)
+    # 만약 res에 '이름(원본)', '이름(한글만)'이 없다면, 조정 시 result_df에 같이 포함시키도록 해야 함.
+    if "이름(원본)" in res.columns and "이름(한글만)" in res.columns:
+        res["이름"] = res["이름(한글만)"] if name_mode_after == "한글만" else res["이름(원본)"]
+
+    if sort_mode_after == "번호순":
+        res = res.sort_values(by=["반", "번호"], ascending=[True, True], na_position="last")
+    else:
+        res = res.sort_values(by=["반", "점수", "번호"], ascending=[True, False, True], na_position="last")
+
+    # 2) 반별 테이블
+    st.subheader("📋 반별 학생 목록(조정 결과)")
+    def highlight_changed(row):
+        return ["background-color: #fff3b0" if row.get("변경", False) else "" for _ in row]
+
+    classes2 = sorted([c for c in res["반"].unique() if str(c).strip() != ""])
+    tabs = st.tabs([f"{c}반" for c in classes2])
+
+    show_cols = ["_excel_row", "반_원본", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)", "변경"]
+    rename_map = {"_excel_row": "엑셀행번호", "반_원본": "원본반", "반": "조정반", "이전반(표시)": "이전반"}
+
+    for tab, cls in zip(tabs, classes2):
+        with tab:
+            d = res[res["반"] == cls].copy()
+            st.write(f"**인원:** {len(d)}")
+            st.dataframe(d[show_cols].rename(columns=rename_map).style.apply(highlight_changed, axis=1),
+                         use_container_width=True)
+
+    # 3) 반별 평균점수(테이블 아래에서만 표시)
+    st.subheader("📊 반별 평균점수(조정 후)")
     avg2 = (
         res.groupby("반")["점수"]
         .mean()
@@ -575,37 +614,6 @@ if st.session_state.result_df is not None:
     )
     avg2["평균점수"] = avg2["평균점수"].round(2)
     st.dataframe(avg2.sort_values("반"), use_container_width=True)
-
-    # 반별 탭 + 변경 강조
-    def highlight_changed(row):
-        return ["background-color: #fff3b0" if row.get("변경", False) else "" for _ in row]
-
-    classes2 = sorted([c for c in res["반"].unique() if str(c).strip() != ""])
-    tabs = st.tabs([f"{c}반" for c in classes2])
-
-    # 표시 컬럼(학년 제외, 시트 제외, 엑셀행번호 포함)
-    show_cols = ["_excel_row", "반_원본", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)", "변경"]
-    rename_map = {
-        "_excel_row": "엑셀행번호",
-        "반_원본": "원본반",
-        "반": "조정반",
-        "이전반(표시)": "이전반",
-    }
-
-    for tab, cls in zip(tabs, classes2):
-        with tab:
-            d = res[res["반"] == cls].copy()
-            # 평균 점수/인원 표시
-            mean_score = d["점수"].mean()
-            mean_text = "—" if pd.isna(mean_score) else f"{mean_score:.2f}"
-            c1, c2 = st.columns([1, 3])
-            with c1:
-                st.metric("평균점수", mean_text)
-            with c2:
-                st.write(f"**인원:** {len(d)}")
-
-            dd = d[show_cols].rename(columns=rename_map)
-            st.dataframe(dd.style.apply(highlight_changed, axis=1), use_container_width=True)
 
     # =============================
     # 엑셀 다운로드 생성
