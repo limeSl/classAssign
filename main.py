@@ -597,8 +597,26 @@ if st.session_state.result_df is not None:
 
     # 2) 반별 테이블
     st.subheader("📋 반별 학생 목록(조정 결과)")
-    def highlight_changed(row):
-        return ["background-color: #fff3b0" if row.get("변경", False) else "" for _ in row]
+    def highlight_rows(row):
+        # 은은한 반투명 오버레이 (다크/라이트 모두 무난)
+        moved_bg = "background-color: rgba(255, 255, 255, 0.08);"      # 변경됨(살짝 밝게)
+        constraint_bg = "background-color: rgba(0, 180, 255, 0.12);"   # 조건대상(차분한 청록)
+        both_bg = "background-color: rgba(0, 180, 255, 0.12); box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.06);"  
+        # ↑ 둘 다면 '조건색' 위에 아주 약한 밝기 오버레이를 한 겹 더
+
+        changed = bool(row.get("변경", False))
+        constrained = bool(row.get("조건대상", False))
+
+        if changed and constrained:
+            style = both_bg
+        elif constrained:
+            style = constraint_bg
+        elif changed:
+            style = moved_bg
+        else:
+            style = ""
+
+        return [style] * len(row)
 
     classes2 = sorted([c for c in res["반"].unique() if str(c).strip() != ""])
     tabs = st.tabs([f"{c}반" for c in classes2])
@@ -610,8 +628,7 @@ if st.session_state.result_df is not None:
         with tab:
             d = res[res["반"] == cls].copy()
             st.write(f"**인원:** {len(d)}")
-            st.dataframe(d[show_cols].rename(columns=rename_map).style.apply(highlight_changed, axis=1),
-                         use_container_width=True)
+            st.dataframe(dd.style.apply(highlight_rows, axis=1), use_container_width=True)
 
     # 3) 반별 평균점수(테이블 아래에서만 표시)
     st.subheader("📊 반별 평균점수(조정 후)")
