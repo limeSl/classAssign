@@ -365,6 +365,9 @@ if "constraints" not in st.session_state:
     st.session_state.constraints: List[Constraint] = []
 if "result_df" not in st.session_state:
     st.session_state.result_df = None
+if "picker_reset" not in st.session_state:
+    st.session_state.picker_reset = 0
+
 
 # =============================
 # 업로드 & 데이터 구성
@@ -494,7 +497,7 @@ with st.container(border=True):
         "학생 선택 (여기서 바로 검색해서 선택하세요. 예: 이름 타이핑)",
         options=options,
         format_func=lambda x: uid_to_label.get(x, x),
-        key="selected_uids_for_constraint",
+        key=f"selected_uids_for_constraint_{st.session_state.picker_reset}"
     )
 
     add_btn = st.button("➕ 조건 추가", use_container_width=True)
@@ -503,11 +506,9 @@ with st.container(border=True):
             st.warning("조건은 최소 2명 이상 선택해야 합니다.")
         else:
             st.session_state.constraints.append(Constraint(kind=kind, uids=list(selected_uids)))
+            st.session_state.picker_reset += 1
             st.success(f"{kind} 조건 1개가 추가되었습니다. (대상 {len(selected_uids)}명)")
-            st.session_state["selected_uids_for_constraint"] = []
             st.rerun()
-
-
 
 # 조건 목록 표시/삭제
 st.subheader("📌 추가된 조건 목록")
