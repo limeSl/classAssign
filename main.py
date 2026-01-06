@@ -629,8 +629,8 @@ if st.session_state.result_df is not None:
     for tab, cls in zip(tabs, classes2):
         with tab:
             d = res[res["반"] == cls].copy()
-            st.write(f"**인원:** {len(d)}")
-            st.dataframe(dd.style.apply(highlight_rows, axis=1), use_container_width=True)
+            dd = d[show_cols].rename(columns=rename_map)
+            st.dataframe(dd.style.apply(highlight_rows, axis=1),use_container_width=True)
 
     # 3) 반별 평균점수(테이블 아래에서만 표시)
     st.subheader("📊 반별 평균점수(조정 후)")
