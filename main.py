@@ -744,6 +744,17 @@ if run:
 # =============================
 if st.session_state.result_df is not None:
     res = st.session_state.result_df.copy()
+    nm = st.session_state.get("name_mode_after", "원본")  # 라디오와 동일 key
+    if "이름" not in res.columns:
+        if "이름(원본)" in res.columns and "이름(한글만)" in res.columns:
+            res["이름"] = res["이름(한글만)"] if nm == "한글만" else res["이름(원본)"]
+        elif "이름(원본)" in res.columns:
+            res["이름"] = res["이름(원본)"]
+        elif "이름(한글만)" in res.columns:
+            res["이름"] = res["이름(한글만)"]
+        else:
+            raise ValueError("조정 결과(res)에 이름 관련 컬럼이 없습니다. result_df 생성 시 df_all의 이름 컬럼을 포함하세요.")
+
     if "반_원본" not in res.columns and "원본반" in res.columns:
         res["반_원본"] = res["원본반"]
     if "반_원본" not in res.columns:
