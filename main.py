@@ -383,18 +383,29 @@ def adjust_classes_engine(
     size_min=19,
     size_max=21,
     gender_diff_max=2,
-    max_iters=5000,
+    max_iters=8000,
+    tabu_len=60,
+    allow_non_improving_steps=True,
+    expand_pool_if_stuck=True,
 ) -> Tuple[Dict[str, str], str]:
     """
-    안정형 엔진:
-    - 기본은 '원본반 유지' assignment
-    - 떨어뜨리기 위반을 하나씩 잡아서, 스왑 후보를 찾고 bad_edges를 줄이는 방향으로 반복 개선
-    - 후보가 막히면 '보정 후보군(헬퍼)'를 소량 확장(성별/점수 유사)
-    - 하드 규칙(인원/성비)은 항상 유지
+    떨어뜨리기(같은 반 금지) 해결용 엔진.
+
+    핵심 변경점(이전 버전 대비):
+    - "한 번의 swap로 위반 개수가 반드시 감소" 조건을 제거했습니다.
+      (현실적으로는 2~3번 교환을 거쳐서 해결되는 경우가 많습니다.)
+    - swap 파트너를 '조건대상 블록'로만 제한하지 않습니다.
+      대신 "비조건대상 블록이 움직인 횟수"에 페널티를 줘서
+      가능한 한 조건대상 중심으로 해결하되, 막히면 일반적인 '교환'도 허용합니다.
+    - 항상 하드 규칙(인원 19~21, 성비 차 2 이하)을 만족하는 상태만 유지합니다.
+
+    반환:
+    - assignment(block_id -> class)
+    - diagnostics(진행 로그)
     """
     diag: List[str] = []
 
-    # uid->info
+    # uid -> info
     df_index: Dict[str, Dict] = {}
     original_class_uid: Dict[str, str] = {}
     for _, r in df.iterrows():
@@ -406,10 +417,10 @@ def adjust_classes_engine(
     if not classes:
         raise ValueError("반(B열)이 비어 있어 조정을 진행할 수 없습니다.")
 
-    # 블록의 원본반(최빈)
+    # 블록의 '원본 반'(최빈값)
     original_class_block: Dict[str, str] = {}
     for bid, members in blocks.items():
-        counts = {}
+        counts: Dict[str, int] = {}
         for uid in members:
             oc = original_class_uid.get(uid, "")
             if str(oc).strip() == "":
@@ -417,184 +428,172 @@ def adjust_classes_engine(
             counts[oc] = counts.get(oc, 0) + 1
         original_class_block[bid] = max(counts.items(), key=lambda x: x[1])[0] if counts else classes[0]
 
-    # 초기 assignment: 원본반 유지
+    # 초기 배정: 원본 유지
     assignment: Dict[str, str] = {bid: original_class_block[bid] for bid in blocks.keys()}
+
+    # 하드 규칙: 초기 상태도 검증(깨져있으면 여기서부터는 어떤 swap로든 맞춰야 함)
+    cnt0 = class_counts_from_assignment(assignment, blocks, df_index, classes)
+    if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
+        diag.append("- WARN: 원본 배정이 이미 하드 규칙(인원/성비)을 만족하지 않습니다. 먼저 하드 규칙을 맞추는 swap가 필요합니다.")
+
+    # 조건대상(사용자가 건드리겠다고 지정한 학생들) 블록
+    constrained_uids = {u for c in constraints for u in c.uids}
+    movable_blocks = {uid_to_block[u] for u in constrained_uids if u in uid_to_block}
+    diag.append(f"- movable blocks(base): {len(movable_blocks)}개 (조건대상 포함 블록)")
 
     stats_cache = {bid: block_stats(bid, blocks, df_index) for bid in blocks.keys()}
 
-    # movable 풀: 조건에 포함된 uid의 블록
-    constrained_uids = {u for c in constraints for u in c.uids}
-    base_movable = {uid_to_block[u] for u in constrained_uids if u in uid_to_block}
-    diag.append(f"- movable blocks(base): {len(base_movable)}개 (조건대상 포함 블록)")
+    # 현재 상태 점수(lexicographic)
+    def objective(assn: Dict[str, str], nonmovable_moves: int, total_swaps: int) -> Tuple[int, int, int]:
+        # 1) not_same 위반 수
+        v = len(violates_not_same(assn, not_same_edges))
+        # 2) 비조건대상 이동 횟수(작을수록)
+        nm = nonmovable_moves
+        # 3) 총 swap 수(작을수록; 불필요한 변형 억제)
+        return (v, nm, total_swaps)
 
-    # 원본이 하드규칙을 만족하지 않으면: 최소한의 전체 swap으로 하드규칙을 먼저 맞춰야 함
-    cnt0 = class_counts_from_assignment(assignment, blocks, df_index, classes)
-    if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
-        diag.append("- WARN: 원본 배정이 하드 규칙(인원/성비)을 만족하지 않아, 하드규칙 맞추기용 전체 swap(최소)을 허용합니다.")
-        # 하드규칙 보정 단계: 풀을 전체로 확장
-        movable_pool = set(blocks.keys())
-    else:
-        movable_pool = set(base_movable)
+    # tabu(최근 swap) 저장 (bid1,bid2 정렬해서 저장)
+    tabu: List[Tuple[str, str]] = []
 
-    # 하드규칙 보정(필요 시): 간단 스왑 반복 (bad_edges는 신경 X)
-    def _fix_hard_rules(max_fix_iters=3000):
-        nonlocal movable_pool
-        for i in range(max_fix_iters):
-            cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
-            if check_hard_rules(cnt, size_min, size_max, gender_diff_max):
-                diag.append(f"- hard rules fix: OK (iters={i})")
-                return True
-            # 가장 심한 반/성비를 가진 class를 찾아 스왑
-            # 목표: 성비차/인원초과/인원미달 완화
-            worst_cls = None
-            worst_score = -1
-            for c in classes:
-                v = cnt[c]
-                size_pen = 0
-                if v["n"] < size_min:
-                    size_pen = (size_min - v["n"]) * 10
-                elif v["n"] > size_max:
-                    size_pen = (v["n"] - size_max) * 10
-                gender_pen = max(0, abs(v["m"] - v["f"]) - gender_diff_max) * 5
-                s = size_pen + gender_pen
-                if s > worst_score:
-                    worst_score = s
-                    worst_cls = c
-            if worst_cls is None or worst_score <= 0:
-                return False
+    nonmovable_moves = 0
+    total_swaps = 0
 
-            # worst_cls에 있는 블록 하나와 다른 반 블록 하나를 교환해 규칙 개선 시도
-            in_worst = [bid for bid, c in assignment.items() if c == worst_cls]
-            candidates = [bid for bid in movable_pool if assignment[bid] != worst_cls]
-            if not in_worst or not candidates:
-                return False
+    def is_movable(bid: str) -> bool:
+        return bid in movable_blocks
 
-            # 간단히 점수 유사 + 성별구성 동일 우선
-            best_pair = None
-            best_metric = 1e18
-            for a in in_worst[:80]:
-                for b in candidates[:80]:
-                    # 스왑 후 규칙 체크
-                    _swap_assign(assignment, a, b)
-                    cnt2 = class_counts_from_assignment(assignment, blocks, df_index, classes)
-                    ok = check_hard_rules(cnt2, size_min, size_max, gender_diff_max)
-                    # 완벽 ok면 채택
-                    if ok:
-                        diag.append(f"- hard-fix swap: {a} <-> {b}")
-                        return True
-                    # 아니면 개선 정도(최악 점수 감소)로 평가
-                    # 원복하고 후보 점수
-                    _swap_assign(assignment, a, b)
+    # 후보군 생성: 기본은 '위반과 관련된 블록'을 우선 본다
+    def violation_related_blocks(bad_edges: List[Tuple[str, str]]) -> List[str]:
+        s = set()
+        for a, b in bad_edges:
+            s.add(a); s.add(b)
+        return list(s)
 
-                    # 휴리스틱 metric: 성별구성 동일/점수차 우선
-                    metric = (_score_distance(stats_cache, a, b) +
-                              (0 if _same_gender_comp(stats_cache, a, b) else 500.0))
-                    if metric < best_metric:
-                        best_metric = metric
-                        best_pair = (a, b)
-
-            if best_pair:
-                a, b = best_pair
-                _swap_assign(assignment, a, b)
-        diag.append("- hard rules fix: FAIL")
-        return False
-
-    if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
-        if not _fix_hard_rules():
-            raise ValueError("\n".join(diag + ["- FAIL: 하드 규칙(인원/성비)을 만족시키지 못했습니다. 엑셀 원본 배정부터 확인이 필요합니다."]))
-
-    # not_same 해결 단계
-    helper_k = 2
-    helper_win = 30.0
+    cur_bad = violates_not_same(assignment, not_same_edges)
+    diag.append(f"- initial violations: {len(cur_bad)}개")
 
     for it in range(max_iters):
-        bad = violates_not_same(assignment, not_same_edges)
-        if not bad:
-            diag.append(f"- SUCCESS: 떨어뜨리기 위반 0개. iters={it}")
+        cur_bad = violates_not_same(assignment, not_same_edges)
+        cur_v = len(cur_bad)
+        if cur_v == 0 and check_hard_rules(class_counts_from_assignment(assignment, blocks, df_index, classes), size_min, size_max, gender_diff_max):
+            diag.append(f"- SUCCESS: 위반 0개 / 하드 규칙 OK (iters={it}, swaps={total_swaps})")
             return assignment, "\n".join(diag)
 
-        a, b = bad[0]
-        cls = assignment[a]
-        diag.append(f"\n[ITER {it}] violation: ({a},{b}) in class={cls}")
+        # 후보 move 블록: 위반 관련 블록 우선
+        move_candidates = violation_related_blocks(cur_bad) if cur_bad else list(blocks.keys())
+        # move 후보를 섞되, movable 우선
+        move_candidates.sort(key=lambda b: (0 if is_movable(b) else 1))
 
-        # 이동시킬 대상 선택: 우선 base_movable에 있는 쪽, 아니면 movable_pool에 있는 쪽
-        if a in base_movable:
-            move_bid = a
-        elif b in base_movable:
-            move_bid = b
-        elif a in movable_pool:
-            move_bid = a
-        elif b in movable_pool:
-            move_bid = b
-        else:
-            raise ValueError("\n".join(diag + ["- FAIL: 위반 두 블록 모두 이동 불가(정책상)."]))
+        best_swap = None
+        best_obj = None
+        best_score_dist = None
 
-        # 후보 풀: 현재 movable_pool 기준
-        candidates = [cand for cand in movable_pool if cand != move_bid and assignment[cand] != assignment[move_bid]]
-        if not candidates:
-            # 후보가 아예 없다면 helper 확장
-            movable_pool = _choose_helper_blocks(assignment, blocks, df_index, stats_cache, classes, move_bid, movable_pool, helper_k, helper_win)
-            helper_k = min(helper_k + 1, 6)
-            helper_win = min(helper_win + 20.0, 120.0)
-            diag.append(f"- expand helper pool -> {len(movable_pool)} blocks (k={helper_k}, win={helper_win})")
-            continue
+        # 현재 objective
+        cur_obj = objective(assignment, nonmovable_moves, total_swaps)
 
-        # 현재 bad 개수
-        cur_bad = len(bad)
+        # 탐색 폭: move 후보 상위 몇 개만(너무 느려지는 것 방지)
+        move_candidates = move_candidates[:min(len(move_candidates), 10)]
 
-        # 후보 평가: bad_edges 최소, 성별구성 동일 우선, 점수유사 우선, 변경 최소(원본반 유지)
-        best = None
-        best_key = None
+        for move_bid in move_candidates:
+            cur_cls = assignment[move_bid]
+            # swap 파트너: 다른 반에 있는 모든 블록(현실적 교환 허용)
+            for cand in blocks.keys():
+                if cand == move_bid:
+                    continue
+                cand_cls = assignment[cand]
+                if cand_cls == cur_cls:
+                    continue
 
-        for cand in candidates:
-            # 성별구성 동일을 강하게 선호
-            same_comp = _same_gender_comp(stats_cache, move_bid, cand)
-            ok, new_bad = _try_swap(
-                assignment, move_bid, cand,
-                blocks, df_index, classes, not_same_edges,
-                size_min, size_max, gender_diff_max
-            )
-            if not ok:
-                continue
+                pair = tuple(sorted((move_bid, cand)))
+                if pair in tabu:
+                    continue
 
-            # 스왑은 적용된 상태이므로 이동/변경 비용 계산 후 원복(평가만)
-            # moved_count: 원본반과 다르면 1로 카운트(블록 단위 근사)
-            moved_after = 0
-            for bid in (move_bid, cand):
-                if assignment[bid] != original_class_block[bid]:
-                    moved_after += 1
+                # swap 시뮬레이션
+                assignment[move_bid], assignment[cand] = cand_cls, cur_cls
 
-            # 점수 차
-            sd = _score_distance(stats_cache, move_bid, cand)
+                cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
+                hard_ok = check_hard_rules(cnt, size_min, size_max, gender_diff_max)
 
-            # key: (bad_edges, moved_after, not same_comp, score_dist)
-            key = (new_bad, moved_after, 0 if same_comp else 1, sd)
+                if hard_ok:
+                    after_v = len(violates_not_same(assignment, not_same_edges))
 
-            # 원복
-            _swap_assign(assignment, move_bid, cand)
+                    # 비조건대상 블록이 움직이면 페널티 증가(하지만 막히면 허용)
+                    nm_add = (0 if is_movable(move_bid) else 1) + (0 if is_movable(cand) else 1)
+                    obj = (after_v, nonmovable_moves + nm_add, total_swaps + 1)
 
-            # 개선이 없으면(위반 개수 동일 이상) 기본적으로 스킵.
-            # 다만 stuck 방지를 위해 동일이면 moved/comp가 좋아지면 허용.
-            if new_bad > cur_bad:
-                continue
+                    # 성적 유사도(동점일 때만 사용)
+                    dist = score_distance(stats_cache, move_bid, cand)
 
-            if best is None or key < best_key:
-                best = cand
-                best_key = key
+                    # 선택 규칙:
+                    # 1) 위반 수 최소
+                    # 2) 비조건대상 이동 최소
+                    # 3) swap 수 최소
+                    # 4) 점수 차 최소
+                    better = False
+                    if best_obj is None or obj < best_obj:
+                        better = True
+                    elif obj == best_obj:
+                        if best_score_dist is None or dist < best_score_dist:
+                            better = True
 
-        if best is None:
-            # 막힘: helper 확장
-            movable_pool = _choose_helper_blocks(assignment, blocks, df_index, stats_cache, classes, move_bid, movable_pool, helper_k, helper_win)
-            helper_k = min(helper_k + 1, 6)
-            helper_win = min(helper_win + 20.0, 120.0)
-            diag.append(f"- NO swap candidate improving/hard-ok. expand pool -> {len(movable_pool)} blocks (k={helper_k}, win={helper_win})")
-            continue
+                    # 개선 조건: 기본은 '악화하지 않는' 후보부터 채택
+                    if better:
+                        best_obj = obj
+                        best_score_dist = dist
+                        best_swap = (move_bid, cand, cur_cls, cand_cls, nm_add, after_v)
 
-        # best swap 적용
-        _swap_assign(assignment, move_bid, best)
-        diag.append(f"- SWAP: {move_bid}({original_class_block[move_bid]}→{assignment[move_bid]}) <-> {best}({original_class_block[best]}→{assignment[best]}) | key={best_key}")
+                # 원복
+                assignment[move_bid], assignment[cand] = cur_cls, cand_cls
 
-    raise ValueError("\n".join(diag + [f"- FAIL: max_iters({max_iters}) 도달(해결 못함)"]))
+        if best_swap is None:
+            # 후보 자체가 없음(하드 규칙 때문에 swap이 불가능하거나, 모든 후보가 tabu 등)
+            if expand_pool_if_stuck and cur_bad:
+                # 임시로 '점수/성별 유사' 블록들을 movable에 추가해서 다음 iter에서 더 넓게 탐색
+                try:
+                    # 위반 엣지의 첫 블록 기준으로 확장
+                    move_bid = cur_bad[0][0]
+                    movable_blocks = expand_movable_candidates(
+                        df=df,
+                        blocks=blocks,
+                        assignment=assignment,
+                        df_index=df_index,
+                        movable_blocks=movable_blocks,
+                        move_bid=move_bid,
+                        classes=classes,
+                        k_per_class=3,
+                        score_window=50.0,
+                    )
+                    diag.append(f"[ITER {it}] stuck → expanded movable pool: {len(movable_blocks)}개")
+                    # tabu 조금 비우기
+                    tabu = tabu[-max(0, tabu_len//2):]
+                    continue
+                except Exception:
+                    pass
+
+            diag.append(f"- FAIL: 후보 swap이 없습니다 (iters={it}, violations={cur_v}). 하드 규칙 때문에 교환이 막혔거나, 조건이 너무 빡빡할 수 있습니다.")
+            raise ValueError("\n".join(diag))
+
+        move_bid, cand, cur_cls, cand_cls, nm_add, after_v = best_swap
+
+        # non-improving step 방지 옵션: 위반이 늘어나는 swap는 기본적으로 거부
+        if (not allow_non_improving_steps) and after_v > cur_v:
+            diag.append(f"[ITER {it}] best candidate would increase violations ({cur_v}→{after_v}) and allow_non_improving_steps=False")
+            raise ValueError("\n".join(diag))
+
+        # swap 적용
+        assignment[move_bid], assignment[cand] = cand_cls, cur_cls
+        total_swaps += 1
+        nonmovable_moves += nm_add
+        tabu.append(tuple(sorted((move_bid, cand))))
+        if len(tabu) > tabu_len:
+            tabu = tabu[-tabu_len:]
+
+        # 로그(가끔만)
+        if it % 30 == 0 or after_v < cur_v:
+            diag.append(f"[ITER {it}] swap {move_bid}({cur_cls}→{cand_cls}) <-> {cand}({cand_cls}→{cur_cls}) | violations {cur_v}→{after_v} | nm_moves={nonmovable_moves}")
+
+    diag.append(f"- FAIL: max_iters 도달 (violations={len(violates_not_same(assignment, not_same_edges))})")
+    raise ValueError("\n".join(diag))
+
 
 # =============================
 # 세션 상태 초기화 (유지)
