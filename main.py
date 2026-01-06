@@ -506,52 +506,107 @@ if uploaded is not None:
     st.subheader("2. 업로드 결과(원본)")
     render_class_tabs(df)
 
-    # =========================
-    # 3. 조건 추가 (학생 테이블 아래에 표시)
-    # =========================
-    st.markdown("### 조건 설정")        
+    # 3. 조건 추가
+        st.markdown("### 조건 설정")
+    
     if "constraints" not in st.session_state:
         st.session_state["constraints"] = []
-
-    col1, col2 = st.columns([1, 3])
-
-    with col1:
-        kind = st.radio("조건 종류", ["학생 묶기", "학생 떨어뜨리기"], horizontal=False)
-
-    with col2:
-        # 이름 검색 가능한 multiselect
-        options = dict(zip(df["표시명"].tolist(), df["UID"].tolist()))
-        selected_display = st.multiselect(
-            "학생 선택(이름 검색 가능)",
-            options=list(options.keys()),
+    
+    # 🔹 선택 초기화를 위한 key
+    if "picker_reset" not in st.session_state:
+        st.session_state["picker_reset"] = 0
+    
+    with st.container():
+        st.markdown(
+            """
+            <div style="
+                border: 2px dashed #aaa;
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 20px;
+            ">
+            """,
+            unsafe_allow_html=True,
         )
-        selected_uids = [options[x] for x in selected_display]
-
-    add_btn = st.button("조건 추가", type="primary")
-
-    if add_btn:
-        if len(selected_uids) < 2:
-            st.warning("조건은 최소 2명 이상 선택해야 합니다.")
-        else:
-            st.session_state["constraints"].append(
-                Constraint(
-                    kind="묶기" if kind == "학생 묶기" else "떨어뜨리기",
-                    uids=selected_uids,
-                )
+    
+        col1, col2 = st.columns([1, 3])
+    
+        with col1:
+            kind = st.radio(
+                "조건 종류",
+                ["학생 묶기", "학생 떨어뜨리기"],
+                key=f"kind_{st.session_state.picker_reset}",
             )
-
+    
+        with col2:
+            options = dict(zip(df["표시명"].tolist(), df["UID"].tolist()))
+            selected_display = st.multiselect(
+                "학생 선택 (이름 검색 가능)",
+                options=list(options.keys()),
+                key=f"selected_uids_{st.session_state.picker_reset}",
+            )
+            selected_uids = [options[x] for x in selected_display]
+    
+        add_btn = st.button("➕ 조건 추가", type="primary")
+    
+        if add_btn:
+            if len(selected_uids) < 2:
+                st.warning("조건은 최소 2명 이상 선택해야 합니다.")
+            else:
+                st.session_state["constraints"].append(
+                    Constraint(
+                        kind="묶기" if kind == "학생 묶기" else "떨어뜨리기",
+                        uids=selected_uids,
+                    )
+                )
+                # ✅ 선택 초기화
+                st.session_state.picker_reset += 1
+                st.rerun()
+    
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # =========================
     # 현재 조건 표시
-    if st.session_state["constraints"]:
-        st.markdown("**현재 추가된 조건**")
-        for i, c in enumerate(st.session_state["constraints"], start=1):
-            names = df[df["UID"].isin(c.uids)]["표시명"].tolist()
-            st.write(f"{i}. [{c.kind}] " + ", ".join(names))
-        clear_btn = st.button("조건 전체 삭제")
-        if clear_btn:
-            st.session_state["constraints"] = []
-            st.rerun()
+    # =========================
+    st.markdown("### 설정된 조건")
+    
+    if not st.session_state["constraints"]:
+        st.info("아직 조건이 없습니다.")
     else:
-        st.info("아직 조건이 없습니다. 조건을 추가하세요.")
+        for idx, c in enumerate(st.session_state["constraints"]):
+            names = df[df["UID"].isin(c.uids)]["표시명"].tolist()
+    
+            border_color = "#4CAF50" if c.kind == "묶기" else "#F44336"
+            bg_color = "rgba(76,175,80,0.08)" if c.kind == "묶기" else "rgba(244,67,54,0.08)"
+            icon = "🔗 묶기" if c.kind == "묶기" else "✂️ 떨어뜨리기"
+    
+            st.markdown(
+                f"""
+                <div style="
+                    border: 2px solid {border_color};
+                    border-radius: 12px;
+                    padding: 12px;
+                    margin-bottom: 12px;
+                    background-color: {bg_color};
+                ">
+                    <div style="font-weight:700; margin-bottom:8px;">{icon}</div>
+                    <div>
+                        {" ".join([
+                            f"<span style='display:inline-block; padding:4px 10px; margin:4px; border-radius:16px; background:#eee; font-size:0.9em;'>"
+                            + name +
+                            "</span>"
+                            for name in names
+                        ])}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    
+            # 🔻 개별 삭제 버튼
+            if st.button("🗑️ 이 조건 삭제", key=f"del_{idx}"):
+                del st.session_state["constraints"][idx]
+                st.rerun()
 
     adjust_btn = st.button("조정하기")
 
