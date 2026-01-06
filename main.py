@@ -98,13 +98,10 @@ def render_class_tabs(df: pd.DataFrame, highlight_uids: set | None = None):
             avg_score = round(sub["점수"].astype(float).mean(), 2) if total > 0 else 0
 
             # 🔹 상단 요약
-            st.markdown(
-                f"""
-                **인원수:** {total}명  
-                **성비:** 남 {male} / 여 {female}  
-                **평균 성적:** {avg_score}
-                """
-            )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("인원수", f"{total}명")
+            c2.metric("성비", f"남 {male} / 여 {female}")
+            c3.metric("평균 성적", avg_score)
 
             # 🔹 테이블 (반 컬럼 제거)
             show_cols = [c for c in WEB_COL_ORDER if c != "반"]
@@ -482,7 +479,7 @@ if uploaded is not None:
         "성별": df.iloc[:, 5],
         "점수": df.iloc[:, 6],
         "이전 학년": df.iloc[:, 7],
-        "이전 반": df.iloc[:, 8],
+        "이전 반": df["이전 반"] = "1-" + df["이전 반"].astype(str).str.strip(),
         "이전 번호": df.iloc[:, 9] if df.shape[1] > 9 else "",
     })
 
@@ -492,8 +489,7 @@ if uploaded is not None:
     df = df[["학년", "반", "번호", "이름", "생년월일", "성별", "점수", "이전 반"]].copy()
     df["성별"] = df["성별"].apply(_norm_gender)
     df["UID"] = build_uid(df)
-    df["표시명"] = display_name(df)
-
+    df["표시명"] = (df["이름"] + " (이전반 " + df["이전 반"] + ")" )
     # 세션 저장 (원본 고정)
     st.session_state["df_original"] = df.copy()
 
@@ -506,8 +502,20 @@ if uploaded is not None:
     # =========================
     # 3. 조건 추가 (학생 테이블 아래에 표시)
     # =========================
-    st.subheader("3. 조건 추가")
-
+    st.markdown("### 조건 설정")
+    with st.container():
+        st.markdown(
+            """
+            <div style="
+                border: 2px dashed #999;
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 20px;
+            ">
+            """,
+            unsafe_allow_html=True,
+        )
+        
     if "constraints" not in st.session_state:
         st.session_state["constraints"] = []
 
@@ -550,11 +558,9 @@ if uploaded is not None:
             st.rerun()
     else:
         st.info("아직 조건이 없습니다. 조건을 추가하세요.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # =========================
-    # 4. 조정하기 버튼 -> 조정된 테이블/목록
-    # =========================
-    st.subheader("4. 조정")
     adjust_btn = st.button("조정하기")
 
     if adjust_btn:
