@@ -510,20 +510,7 @@ if uploaded is not None:
     # =========================
     # 3. 조건 추가 (학생 테이블 아래에 표시)
     # =========================
-    st.markdown("### 조건 설정")
-    with st.container():
-        st.markdown(
-            """
-            <div style="
-                border: 2px dashed #999;
-                border-radius: 10px;
-                padding: 15px;
-                margin-bottom: 20px;
-            ">
-            """,
-            unsafe_allow_html=True,
-        )
-        
+    st.markdown("### 조건 설정")        
     if "constraints" not in st.session_state:
         st.session_state["constraints"] = []
 
@@ -566,8 +553,6 @@ if uploaded is not None:
             st.rerun()
     else:
         st.info("아직 조건이 없습니다. 조건을 추가하세요.")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
 
     adjust_btn = st.button("조정하기")
 
