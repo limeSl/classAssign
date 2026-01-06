@@ -44,11 +44,26 @@ def _norm_gender(x) -> str:
 def _safe_str(x) -> str:
     return "" if pd.isna(x) else str(x)
 
-
 def build_uid(df: pd.DataFrame) -> pd.Series:
     def norm(x):
         return "" if pd.isna(x) else str(x).strip()
-    return df.apply(lambda r: f"{norm(r['이전 학년'])}-{norm(r['이전 반'])}-{norm(r['이전 번호'])}", axis=1)
+
+    # 엑셀 구조 기준: H(7)=이전학년, I(8)=이전반, J(9)=이전번호
+    if df.shape[1] > 9:
+        prev_grade = df.iloc[:, 7].apply(norm)
+        prev_class = df.iloc[:, 8].apply(norm)
+        prev_no = df.iloc[:, 9].apply(norm)
+        return prev_grade + "-" + prev_class + "-" + prev_no
+
+    # J열이 누락된 파일도 대비(최후 수단)
+    if df.shape[1] > 8:
+        prev_grade = df.iloc[:, 7].apply(norm)
+        prev_class = df.iloc[:, 8].apply(norm)
+        # 이름+생년월일로 대체
+        name = df.iloc[:, 3].apply(norm) if df.shape[1] > 3 else ""
+        birth = df.iloc[:, 4].apply(norm) if df.shape[1] > 4 else ""
+        return prev_grade + "-" + prev_class + "-" + name + "-" + birth
+    return df.index.astype(str)
 
 def display_name(df: pd.DataFrame) -> pd.Series:
     # 선택창에서 검색 편하도록 "이름 (반-번호, 생년월일)" 형태
@@ -432,6 +447,7 @@ if uploaded is not None:
     df = df[["학년", "반", "번호", "이름", "생년월일", "성별", "점수", "이전 반"]].copy()
     df["성별"] = df["성별"].apply(_norm_gender)
     df["UID"] = build_uid(df)
+    df["이전 반"] = "1-" + df.iloc[:, 8].astype(str).str.strip()
     df["표시명"] = display_name(df)
 
     # 세션 저장 (원본 고정)
