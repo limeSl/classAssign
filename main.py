@@ -479,7 +479,7 @@ if uploaded is not None:
         "성별": df.iloc[:, 5],
         "점수": df.iloc[:, 6],
         "이전 학년": df.iloc[:, 7],
-        "이전 반": df["이전 반"] = "1-" + df["이전 반"].astype(str).str.strip(),
+        "이전 반": df.iloc[:, 8],
         "이전 번호": df.iloc[:, 9] if df.shape[1] > 9 else "",
     })
 
