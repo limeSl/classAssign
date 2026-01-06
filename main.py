@@ -512,48 +512,61 @@ if uploaded is not None:
     if "constraints" not in st.session_state:
         st.session_state["constraints"] = []
     
-    # 🔹 선택 초기화를 위한 key
+    # ✅ picker_reset 초기화는 '값만' 설정하고, UI는 밖에서 항상 그려야 함
     if "picker_reset" not in st.session_state:
         st.session_state["picker_reset"] = 0
     
-        col1, col2 = st.columns([1, 3])
+    # (선택) 박스 컨테이너
+    st.markdown(
+        """
+        <div style="
+            border: 2px dashed #aaa;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        ">
+        """,
+        unsafe_allow_html=True,
+    )
     
-        with col1:
-            kind = st.radio(
-                "조건 종류",
-                ["학생 묶기", "학생 떨어뜨리기"],
-                key=f"kind_{st.session_state.picker_reset}",
-            )
+    col1, col2 = st.columns([1, 3])
     
-        with col2:
-            options = dict(zip(df["표시명"].tolist(), df["UID"].tolist()))
-            selected_display = st.multiselect(
-                "학생 선택 (이름 검색 가능)",
-                options=list(options.keys()),
-                key=f"selected_uids_{st.session_state.picker_reset}",
-            )
-            selected_uids = [options[x] for x in selected_display]
+    with col1:
+        kind = st.radio(
+            "조건 종류",
+            ["학생 묶기", "학생 떨어뜨리기"],
+            key=f"kind_{st.session_state.picker_reset}",
+        )
     
-        add_btn = st.button("➕ 조건 추가", type="primary")
+    with col2:
+        options = dict(zip(df["표시명"].tolist(), df["UID"].tolist()))
+        selected_display = st.multiselect(
+            "학생 선택 (이름 검색 가능)",
+            options=list(options.keys()),
+            key=f"selected_uids_{st.session_state.picker_reset}",
+        )
+        selected_uids = [options[x] for x in selected_display]
     
-        if add_btn:
-            if len(selected_uids) < 2:
-                st.warning("조건은 최소 2명 이상 선택해야 합니다.")
-            else:
-                st.session_state["constraints"].append(
-                    Constraint(
-                        kind="묶기" if kind == "학생 묶기" else "떨어뜨리기",
-                        uids=selected_uids,
-                    )
+    add_btn = st.button("➕ 조건 추가", type="primary")
+    
+    if add_btn:
+        if len(selected_uids) < 2:
+            st.warning("조건은 최소 2명 이상 선택해야 합니다.")
+        else:
+            st.session_state["constraints"].append(
+                Constraint(
+                    kind="묶기" if kind == "학생 묶기" else "떨어뜨리기",
+                    uids=selected_uids,
                 )
-                # ✅ 선택 초기화
-                st.session_state.picker_reset += 1
-                st.rerun()
+            )
+            # ✅ 선택 초기화 (key를 바꿔서 multiselect/radio 리셋)
+            st.session_state.picker_reset += 1
+            st.rerun()
     
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
     
     # =========================
-    # 현재 조건 표시
+    # 설정된 조건
     # =========================
     st.markdown("### 설정된 조건")
     
@@ -562,13 +575,12 @@ if uploaded is not None:
     else:
         for idx, c in enumerate(st.session_state["constraints"]):
             names = df[df["UID"].isin(c.uids)]["표시명"].tolist()
-        
+    
             is_group = (c.kind == "묶기")
             border_color = "#4CAF50" if is_group else "#F44336"
             bg_color = "rgba(76,175,80,0.08)" if is_group else "rgba(244,67,54,0.08)"
             icon = "🔗 묶기" if is_group else "✂️ 떨어뜨리기"
-        
-            # ✅ 칩 HTML을 먼저 안전하게 생성 (f-string 안에서 파이썬코드 돌리지 않음)
+    
             chips_html = "".join([
                 "<span style='display:inline-block; padding:4px 10px; margin:4px; "
                 "border-radius:16px; "
@@ -579,8 +591,7 @@ if uploaded is not None:
                 "</span>"
                 for name in names
             ])
-
-        
+    
             st.markdown(
                 f"""
                 <div style="
@@ -590,17 +601,18 @@ if uploaded is not None:
                     margin-bottom: 12px;
                     background-color: {bg_color};
                 ">
-                    <div style="font-weight:700; margin-bottom:8px;">{icon}</div>
+                    <div style="font-weight:700; margin-bottom:8px;">{html.escape(icon)}</div>
                     <div>{chips_html}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-        
+    
             if st.button("🗑️ 이 조건 삭제", key=f"del_{idx}"):
                 del st.session_state["constraints"][idx]
                 st.rerun()
-
+    
+    # 조정하기 버튼은 여기 그대로
     adjust_btn = st.button("조정하기")
 
     if adjust_btn:
