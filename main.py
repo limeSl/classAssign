@@ -507,7 +507,7 @@ if uploaded is not None:
     render_class_tabs(df)
 
     # 3. 조건 추가
-        st.markdown("### 조건 설정")
+    st.markdown("### 조건 설정")
     
     if "constraints" not in st.session_state:
         st.session_state["constraints"] = []
