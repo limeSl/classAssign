@@ -342,6 +342,61 @@ def _swap_and_check(
 
     assignment[bid1], assignment[bid2] = ca, cb
     return hard_ok, edges_ok, (len(after_bad) > 0)
+def expand_movable_candidates(
+    df,
+    blocks,
+    assignment,
+    df_index,
+    movable_blocks,
+    move_bid,
+    classes,
+    k_per_class=2,
+    score_window=30.0,
+):
+    """
+    swap/move+fix가 막힐 때, '보정 후보군'을 임시 movable로 확장
+    - 같은 성별 우선
+    - 점수 차가 score_window 이내인 학생들 우선
+    - 각 반에서 k_per_class명씩만 추가
+    """
+    m1, f1, avg1 = block_stats(move_bid, blocks, df_index)
+    # move_bid가 1명 블록일 때 성별을 기준으로 잡기
+    target_gender = None
+    for uid in blocks[move_bid]:
+        g = df_index[uid]["성별"]
+        if g in ("남", "여"):
+            target_gender = g
+            break
+
+    if avg1 is None:
+        avg1 = 0.0
+
+    extra = set()
+
+    for cls in classes:
+        # 현재 cls 반에 있는 블록들
+        bids_in_cls = [bid for bid, c in assignment.items() if c == cls and bid not in movable_blocks and bid != move_bid]
+        scored = []
+        for bid in bids_in_cls:
+            m2, f2, avg2 = block_stats(bid, blocks, df_index)
+            # 성별 우선(블록 단위라 완벽치 않지만, 1명 블록이면 거의 맞음)
+            if target_gender == "남" and f2 > 0 and m2 == 0:
+                continue
+            if target_gender == "여" and m2 > 0 and f2 == 0:
+                continue
+
+            if avg2 is None:
+                continue
+
+            dist = abs(avg2 - avg1)
+            if dist <= score_window:
+                scored.append((dist, bid))
+
+        scored.sort(key=lambda x: x[0])
+        for _, bid in scored[:k_per_class]:
+            extra.add(bid)
+
+    return movable_blocks | extra
 
 def adjust_classes_min_change_swap_only_v2(
     df,  # df_all
@@ -547,7 +602,26 @@ def adjust_classes_min_change_swap_only_v2(
         
             if moved_ok:
                 continue
-        
+            # ---- 여기서 바로 실패하지 말고, 임시 후보군 확장 후 한 번 더 시도 ----
+            diag_lines.append("- INFO: 임시 보정 후보군(성별/점수 유사) 확장 후 재시도")
+            
+            movable_blocks = expand_movable_candidates(
+                df=df,
+                blocks=blocks,
+                assignment=assignment,
+                df_index=df_index,
+                movable_blocks=movable_blocks,
+                move_bid=move_bid,
+                classes=classes,
+                k_per_class=2,      # 반당 2명만 추가 후보
+                score_window=30.0,  # 점수 ±30 안쪽만
+            )
+            
+            diag_lines.append(f"- expanded movable blocks: {len(movable_blocks)}개")
+            
+            # 확장 후에는 이번 ITER을 다시 돌려서 후보 탐색을 재수행
+            continue
+
             # move+fix도 안되면 실패
             diag_lines.append("- FAIL: swap도 없고 move+보정도 불가")
             diag_lines.append("  (조건대상 부족 또는 하드 규칙 때문에 이동/보정이 막힘)")
