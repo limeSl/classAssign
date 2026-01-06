@@ -579,11 +579,11 @@ if uploaded is not None:
                     <div style="font-weight:700; margin-bottom:8px;">{icon}</div>
                     <div>
                         {" ".join([
-                            f"<span style='display:inline-block; padding:4px 10px; margin:4px;
-                                border-radius:16px;
-                                border:1px solid rgba(255,255,255,0.6);
-                                background-color: transparent;
-                                font-size:0.9em;'>"
+                            f"<span style='display:inline-block; padding:4px 10px; margin:4px; "
+                            f"border-radius:16px; "
+                            f"border:1px solid rgba(255,255,255,0.6); "
+                            f"background-color: transparent; "
+                            f"font-size:0.9em;'>"
                             + name +
                             "</span>"
                             for name in names
