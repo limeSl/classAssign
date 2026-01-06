@@ -141,7 +141,7 @@ def render_class_tabs(
 
             c1, c2, c3 = st.columns(3)
             c1.metric("인원", n)
-            c2.metric("성비(남/여)", f"{m}/{f} (차이 {diff})")
+            c2.metric("성비(남/여)", f"{m}/{f}")
             c3.metric("반 평균점수", mean_text)
 
             # ---- 표 준비 ----
@@ -771,15 +771,42 @@ if st.session_state.result_df is not None:
     else:
         res = res.sort_values(by=["반", "점수", "번호"], ascending=[True, False, True], na_position="last")
 
-    # 2) 반별 테이블
+    def highlight_rows(row):
+        # 다크/라이트 모두 무난한 반투명 오버레이
+        moved_bg = "background-color: rgba(255, 255, 255, 0.18);"         # 변경됨
+        constraint_bg = "background-color: rgba(0, 180, 255, 0.14);"      # 조건대상
+        both_bg = (
+            "background-color: rgba(0, 180, 255, 0.14);"
+            "box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.06);"
+        )
+
+        changed = bool(row.get("변경", False))
+        constrained = bool(row.get("조건대상", False))
+
+        if changed and constrained:
+            style = both_bg
+        elif constrained:
+            style = constraint_bg
+        elif changed:
+            style = moved_bg
+        else:
+            style = ""
+
+        return [style] * len(row)
+
     render_class_tabs(
         df=res,
         title="📋 반별 학생 목록(조정 결과)",
         show_changed=True,
         highlight_func=highlight_rows,
         table_cols=["_excel_row", "반_원본", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)", "조건대상", "변경"],
-        rename_map={"_excel_row": "엑셀행번호", "반_원본": "원본반", "반": "조정반", "이전반(표시)": "이전반"},
-        hide_cols=["조건대상", "변경"],  # ✅ 표에는 숨기되 스타일 판단에는 사용
+        rename_map={
+            "_excel_row": "엑셀행번호",
+            "반_원본": "원본반",
+            "반": "조정반",
+            "이전반(표시)": "이전반",
+        },
+        hide_cols=["조건대상", "변경"],
     )
                 
     # =============================
