@@ -565,27 +565,6 @@ if not frames:
 
 df_all = pd.concat(frames, ignore_index=True)
 
-# 웹 표시용: 학년 제외. (내부에는 학년 유지)
-# 이름 토글/정렬 라디오
-st.subheader("설정")
-c1, c2 = st.columns([1, 2])
-with c1:
-    name_mode = st.radio("이름 표시", ["원본", "한글만"], horizontal=True)
-with c2:
-    sort_mode = st.radio("정렬 기준", ["번호순", "성적순"], horizontal=True)
-
-display_name_col = "이름(한글만)" if name_mode == "한글만" else "이름(원본)"
-
-view_base = df_all.copy()
-view_base["이전반(표시)"] = view_base["이전반_raw"].map(format_prev_class_display)
-view_base = view_base.rename(columns={display_name_col: "이름"})
-
-# 정렬 반영
-if sort_mode == "번호순":
-    view_base = view_base.sort_values(by=["반", "번호"], ascending=[True, True], na_position="last")
-else:
-    view_base = view_base.sort_values(by=["반", "점수", "번호"], ascending=[True, False, True], na_position="last")
-
 # 반 목록
 classes = sorted([c for c in view_base["반"].unique() if str(c).strip() != ""])
 if not classes:
@@ -732,17 +711,6 @@ if run:
         # 표시용 컬럼 구성(학년 제외, 시트 제외)
         result["이전반(표시)"] = result["이전반_raw"].map(format_prev_class_display)
         result_display = result.copy()
-        # 이름 모드 반영
-        if name_mode == "한글만":
-            result_display["이름"] = result_display["이름(한글만)"]
-        else:
-            result_display["이름"] = result_display["이름(원본)"]
-
-        # 정렬 반영
-        if sort_mode == "번호순":
-            result_display = result_display.sort_values(by=["반", "번호"], ascending=[True, True], na_position="last")
-        else:
-            result_display = result_display.sort_values(by=["반", "점수", "번호"], ascending=[True, False, True], na_position="last")
 
         st.session_state.result_df = result_display
 
@@ -782,23 +750,6 @@ if st.session_state.result_df is not None:
             res["조건대상"] = res["_uid"].isin(constrained_uids)
         else:
             res["조건대상"] = False
-    # 1) 설정
-    st.subheader("설정(조정 결과 보기)")
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        name_mode_after = st.radio("이름 표시", ["원본", "한글만"], horizontal=True, key="name_mode_after")
-    with c2:
-        sort_mode_after = st.radio("정렬 기준", ["번호순", "성적순"], horizontal=True, key="sort_mode_after")
-
-    # 설정 반영 (res는 내부적으로 원본/한글 이름 컬럼을 갖고 있어야 함)
-    # 만약 res에 '이름(원본)', '이름(한글만)'이 없다면, 조정 시 result_df에 같이 포함시키도록 해야 함.
-    if "이름(원본)" in res.columns and "이름(한글만)" in res.columns:
-        res["이름"] = res["이름(한글만)"] if name_mode_after == "한글만" else res["이름(원본)"]
-
-    if sort_mode_after == "번호순":
-        res = res.sort_values(by=["반", "번호"], ascending=[True, True], na_position="last")
-    else:
-        res = res.sort_values(by=["반", "점수", "번호"], ascending=[True, False, True], na_position="last")
 
     def highlight_rows(row):
         # 다크/라이트 모두 무난한 반투명 오버레이
