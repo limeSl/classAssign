@@ -562,11 +562,24 @@ if uploaded is not None:
     else:
         for idx, c in enumerate(st.session_state["constraints"]):
             names = df[df["UID"].isin(c.uids)]["표시명"].tolist()
-    
-            border_color = "#4CAF50" if c.kind == "묶기" else "#F44336"
-            bg_color = "rgba(76,175,80,0.08)" if c.kind == "묶기" else "rgba(244,67,54,0.08)"
-            icon = "🔗 묶기" if c.kind == "묶기" else "✂️ 떨어뜨리기"
-    
+        
+            is_group = (c.kind == "묶기")
+            border_color = "#4CAF50" if is_group else "#F44336"
+            bg_color = "rgba(76,175,80,0.08)" if is_group else "rgba(244,67,54,0.08)"
+            icon = "🔗 묶기" if is_group else "✂️ 떨어뜨리기"
+        
+            # ✅ 칩 HTML을 먼저 안전하게 생성 (f-string 안에서 파이썬코드 돌리지 않음)
+            chips_html = "".join([
+                "<span style='display:inline-block; padding:4px 10px; margin:4px; "
+                "border-radius:16px; "
+                "border:1px solid rgba(255,255,255,0.6); "
+                "background-color: transparent; "
+                "font-size:0.9em;'>"
+                + str(name) +
+                "</span>"
+                for name in names
+            ])
+        
             st.markdown(
                 f"""
                 <div style="
@@ -577,22 +590,16 @@ if uploaded is not None:
                     background-color: {bg_color};
                 ">
                     <div style="font-weight:700; margin-bottom:8px;">{icon}</div>
-                    <div>
-                        {" ".join([
-                            f"<span style='display:inline-block; padding:4px 10px; margin:4px; "
-                            f"border-radius:16px; "
-                            f"border:1px solid rgba(255,255,255,0.6); "
-                            f"background-color: transparent; "
-                            f"font-size:0.9em;'>"
-                            + name +
-                            "</span>"
-                            for name in names
-                        ])}
-                    </div>
+                    <div>{chips_html}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+        
+            # ✅ 개별 삭제
+            if st.button("🗑️ 이 조건 삭제", key=f"del_{idx}"):
+                del st.session_state["constraints"][idx]
+                st.rerun()
     
             # 🔻 개별 삭제 버튼
             if st.button("🗑️ 이 조건 삭제", key=f"del_{idx}"):
