@@ -11,6 +11,10 @@ import streamlit as st
 # UI 기본
 # =============================
 st.set_page_config(page_title="반편성 도우미", page_icon="🏫", layout="wide")
+
+if "picker_reset" not in st.session_state:
+    st.session_state.picker_reset = 0
+
 st.title("🏫 반편성 도우미")
 st.caption("엑셀 파일을 업로드 하시면 제가 반편성을 도와드립니다.")
 
