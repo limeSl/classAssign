@@ -100,6 +100,75 @@ def format_prev_class_display(prev_raw: str) -> str:
         return f"1-{nums[0]}"
     return f"1-{s}"
 
+def render_class_tabs(
+    df: pd.DataFrame,
+    title: str,
+    class_col: str = "반",
+    show_changed: bool = False,
+    highlight_func=None,
+    table_cols=None,
+    rename_map=None,
+    hide_cols=None,
+):
+    """
+    반별 탭 + (상단) 인원/성비/반평균 + 표 출력 공통 렌더러
+    - df: 표시할 DF (반/성별/점수 컬럼 포함 권장)
+    - highlight_func: pandas Styler 행 스타일 함수 (axis=1)
+    - table_cols: 표에 포함할 컬럼(스타일 판단용 컬럼도 포함 가능)
+    - rename_map: 표 표시용 컬럼명 매핑
+    - hide_cols: 표에서는 숨기되(style 판단에는 남기고 싶은) 컬럼명 리스트 (rename 이후 이름 기준)
+    """
+    st.subheader(title)
+
+    classes = sorted([c for c in df[class_col].unique() if str(c).strip() != ""])
+    if not classes:
+        st.warning("반 정보가 없어 반별로 표시할 수 없습니다.")
+        return
+
+    tabs = st.tabs([f"{c}반" for c in classes])
+
+    for tab, cls in zip(tabs, classes):
+        with tab:
+            d = df[df[class_col] == cls].copy()
+
+            # ---- 상단 요약: 인원 / 성비 / 평균점수 ----
+            n = len(d)
+            m = int((d["성별"] == "남").sum()) if "성별" in d.columns else 0
+            f = int((d["성별"] == "여").sum()) if "성별" in d.columns else 0
+            diff = abs(m - f)
+            mean_score = d["점수"].mean() if "점수" in d.columns else None
+            mean_text = "—" if mean_score is None or pd.isna(mean_score) else f"{mean_score:.2f}"
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("인원", n)
+            c2.metric("성비(남/여)", f"{m}/{f} (차이 {diff})")
+            c3.metric("반 평균점수", mean_text)
+
+            # ---- 표 준비 ----
+            if table_cols is None:
+                table_cols = [col for col in d.columns if not col.startswith("_")]
+
+            out = d[table_cols].copy()
+
+            if rename_map:
+                out = out.rename(columns=rename_map)
+
+            hide_cols = hide_cols or []
+            hide_cols_present = [c for c in hide_cols if c in out.columns]
+
+            # ---- 표 출력 (스타일 적용 + 숨김 지원) ----
+            if show_changed and highlight_func is not None:
+                styled = out.style.apply(highlight_func, axis=1)
+                # pandas/streamlit 환경에 따라 hide 지원 여부가 달라서 try 처리
+                try:
+                    styled = styled.hide(columns=hide_cols_present)
+                    st.dataframe(styled, use_container_width=True)
+                except Exception:
+                    # hide가 안 되면 표시에서만 drop (이 경우 숨긴 컬럼을 스타일에서 못 쓰게 됨)
+                    st.dataframe(out.drop(columns=hide_cols_present), use_container_width=True)
+            else:
+                st.dataframe(out.drop(columns=hide_cols_present), use_container_width=True)
+
 # =============================
 # 조건 데이터 구조
 # =============================
@@ -519,20 +588,13 @@ if not classes:
     st.stop()
 
 # ---- 업로드 직후(조정 전): 반 테이블만 표시 ----
-st.subheader("📋 반별 학생 목록")
-
-# view_base(정렬/이름표시 반영된 DF) 만들고 classes 구한 뒤
-tabs = st.tabs([f"{c}반" for c in classes])
-for tab, cls in zip(tabs, classes):
-    with tab:
-        df_cls = view_base[view_base["반"] == cls].copy()
-        st.write(f"**인원:** {len(df_cls)}")
-        # (평균점수는 여기서 표시하지 않음)
-        st.dataframe(
-            df_cls[["_excel_row", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)"]]
-            .rename(columns={"_excel_row": "엑셀행번호", "이전반(표시)": "이전반"}),
-            use_container_width=True
-        )
+render_class_tabs(
+    df=view_base,
+    title="📋 반별 학생 목록",
+    show_changed=False,
+    table_cols=["_excel_row", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)"],
+    rename_map={"_excel_row": "엑셀행번호", "이전반(표시)": "이전반"},
+)
 
 # =============================
 # 조건 추가 UI (전체 학생 기준, 별도 검색창 없음)
@@ -710,51 +772,21 @@ if st.session_state.result_df is not None:
         res = res.sort_values(by=["반", "점수", "번호"], ascending=[True, False, True], na_position="last")
 
     # 2) 반별 테이블
-    st.subheader("📋 반별 학생 목록(조정 결과)")
-    def highlight_rows(row):
-        # 은은한 반투명 오버레이 (다크/라이트 모두 무난)
-        moved_bg = "background-color: rgba(255, 255, 255, 0.08);"      # 변경됨(살짝 밝게)
-        constraint_bg = "background-color: rgba(0, 180, 255, 0.12);"   # 조건대상(차분한 청록)
-        both_bg = "background-color: rgba(0, 180, 255, 0.12); box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.06);"  
-        # ↑ 둘 다면 '조건색' 위에 아주 약한 밝기 오버레이를 한 겹 더
-
-        changed = bool(row.get("변경", False))
-        constrained = bool(row.get("조건대상", False))
-
-        if changed and constrained:
-            style = both_bg
-        elif constrained:
-            style = constraint_bg
-        elif changed:
-            style = moved_bg
-        else:
-            style = ""
-
-        return [style] * len(row)
-
-    classes2 = sorted([c for c in res["반"].unique() if str(c).strip() != ""])
-    tabs = st.tabs([f"{c}반" for c in classes2])
-
-    show_cols = ["_excel_row", "반_원본", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)", "변경"]
-    rename_map = {"_excel_row": "엑셀행번호", "반_원본": "원본반", "반": "조정반", "이전반(표시)": "이전반"}
-
-    for tab, cls in zip(tabs, classes2):
-        with tab:
-            d = res[res["반"] == cls].copy()
-            dd = d[show_cols].rename(columns=rename_map)
-            st.dataframe(dd.style.apply(highlight_rows, axis=1),use_container_width=True)
-
-    # 3) 반별 평균점수(테이블 아래에서만 표시)
-    st.subheader("📊 반별 평균점수(조정 후)")
-    avg2 = (
-        res.groupby("반")["점수"]
-        .mean()
-        .reset_index()
-        .rename(columns={"점수": "평균점수"})
+    render_class_tabs(
+        df=res,
+        title="📋 반별 학생 목록(조정 결과)",
+        show_changed=True,
+        highlight_func=highlight_rows,
+        table_cols=["_excel_row", "반_원본", "반", "번호", "이름", "생년월일", "성별", "점수", "이전반(표시)", "조건대상", "변경"],
+        rename_map={"_excel_row": "엑셀행번호", "반_원본": "원본반", "반": "조정반", "이전반(표시)": "이전반"},
+        hide_cols=["조건대상", "변경"],  # ✅ 표에는 숨기되 스타일 판단에는 사용
     )
-    avg2["평균점수"] = avg2["평균점수"].round(2)
-    st.dataframe(avg2.sort_values("반"), use_container_width=True)
-
+        for tab, cls in zip(tabs, classes2):
+            with tab:
+                d = res[res["반"] == cls].copy()
+                dd = d[show_cols].rename(columns=rename_map)
+                st.dataframe(dd.style.apply(highlight_rows, axis=1),use_container_width=True)
+                
     # =============================
     # 엑셀 다운로드 생성
     # =============================
