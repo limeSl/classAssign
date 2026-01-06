@@ -326,10 +326,13 @@ def adjust_classes_min_change_swap_only_v2(
     # 원본이 하드규칙을 만족해야 함(정책상 비조건대상 이동 금지이므로)
     cnt0 = class_counts_from_assignment(assignment, blocks, df_index, classes)
     if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
-        diag_lines.append("- FAIL: 원본 배정이 이미 하드 규칙(인원/성비)을 만족하지 않음")
-        diag_lines.append("  정책: 조건대상만 이동이므로, 원본 자체가 규칙을 만족해야 조정 가능")
-        raise ValueError("\n".join(diag_lines))
-
+        diag_lines.append("- WARN: 원본 배정이 하드 규칙을 만족하지 않음 → 보정 모드로 최소 swap 수행")
+        # ✅ 보정 모드에서는 movable_blocks 제한을 완화 (하지만 'swap만'은 유지)
+        #    조건대상이 너무 적으면 규칙을 만족시키는 것 자체가 불가능하므로, 전체 블록을 후보로 열어줌
+        movable_blocks_for_fix = set(blocks.keys())
+    else:
+        movable_blocks_for_fix = movable_blocks
+    
     stats_cache = {bid: block_stats(bid, blocks, df_index) for bid in blocks.keys()}
 
     for it in range(max_iters):
@@ -362,7 +365,7 @@ def adjust_classes_min_change_swap_only_v2(
         # 후보 이유 집계(진단용)
         reasons = {"same_class": 0, "not_movable": 0, "gender_comp_mismatch": 0, "hard_fail": 0, "no_improve": 0}
 
-        for cand in movable_blocks:
+        for cand in movable_blocks_for_fix:
             if cand == move_bid:
                 continue
 
