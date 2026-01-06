@@ -565,12 +565,6 @@ if not frames:
 
 df_all = pd.concat(frames, ignore_index=True)
 
-# 반 목록
-classes = sorted([c for c in view_base["반"].unique() if str(c).strip() != ""])
-if not classes:
-    st.error("반(B열) 값이 비어 있습니다.")
-    st.stop()
-
 # ---- 업로드 직후(조정 전): 반 테이블만 표시 ----
 render_class_tabs(
     df=view_base,
