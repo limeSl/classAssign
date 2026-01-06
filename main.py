@@ -6,21 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Set, Optional
 
 import pandas as pd
-import streamlit as stValueError: - movable blocks: 2개 (조건대상 포함 블록만 이동 가능) [ITER 0] violation edge: (Sheet1:20,Sheet1:5) in class=1 - move_bid=Sheet1:20 (m=0, f=1, avg=517.8) from class 1 - candidates_same_comp: 0개 - candidates_relaxed: 0개 (하드 규칙 유지하는 swap 허용) - FAIL: swap 후보가 없음 reasons summary: {'same_class': 1, 'not_movable': 0, 'gender_comp_mismatch': 0, 'hard_fail': 0, 'no_improve': 0} tips: • 조건대상(이동 가능 학생)이 너무 적으면 해결이 불가할 수 있음 • 떨어뜨리기 조건이 동일 반에 이미 고정된 학생끼리 걸리면 해결 불가 • 완화 swap을 켰는데도 후보가 없다면 하드 규칙(인원/성비) 때문에 교환이 막힌 것
-Traceback:
-File "/mount/src/classassign/main.py", line 699, in <module>
-    assignment_block_to_class, diagnostics = adjust_classes_min_change_swap_only_v2(
-                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        df_all,
-        ^^^^^^^
-    ...<8 lines>...
-        max_iters=5000,
-        ^^^^^^^^^^^^^^^
-    )
-    ^
-File "/mount/src/classassign/main.py", line 497, in adjust_classes_min_change_swap_only_v2
-    raise ValueError("\n".join(diag_lines))
-
+import streamlit as st
 # =============================
 # UI 기본
 # =============================
