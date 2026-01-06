@@ -1,21 +1,21 @@
 import io
 import re
-import random
 import math
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Set, Optional
 
 import pandas as pd
 import streamlit as st
+
 # =============================
-# UI 기본
+# UI 기본 (유지)
 # =============================
 st.set_page_config(page_title="반편성 도우미", page_icon="🏫", layout="wide")
 st.title("🏫 반편성 도우미")
 st.caption("엑셀 파일을 업로드 하시면 제가 반편성을 도와드립니다.")
 
 # =============================
-# 유틸
+# 유틸 (유지/안정화)
 # =============================
 def clean_name_korean_only(x) -> str:
     """이름에서 한글만 남기기 (영문/특수문자/공백/숫자 제거)"""
@@ -57,11 +57,9 @@ def normalize_df_from_spec(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     A:학년, B:반, C:번호, D:이름, E:생년월일, F:성별, G:점수, I:이전반
     (H는 무시)
     """
-    # 최소 9열(A~I)
     if df.shape[1] < 9:
         raise ValueError(f"[{sheet_name}] 열이 부족합니다. I열(이전 반)까지 필요합니다. 현재 열 수: {df.shape[1]}")
 
-    # 엑셀 행번호: (헤더 1행) + 데이터 시작 2행 가정
     excel_row = (df.index.to_series() + 2).astype(int)
 
     out = pd.DataFrame({
@@ -78,13 +76,10 @@ def normalize_df_from_spec(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
         "이전반_raw": df.iloc[:, 8].map(safe_str),
     })
 
-    # 완전 빈 행 제거(반/번호/이름 모두 비어있으면 제거)
     out = out.dropna(how="all")
     out = out[~((out["반"] == "") & (out["번호"].isna()) & (out["이름(원본)"] == ""))]
 
-    # UID(전역 유니크): sheet + excel_row
     out["_uid"] = out["_sheet"].astype(str) + ":" + out["_excel_row"].astype(str)
-
     return out
 
 def format_prev_class_display(prev_raw: str) -> str:
@@ -110,12 +105,7 @@ def render_class_tabs(
     hide_cols=None,
 ):
     """
-    반별 탭 + (상단) 인원/성비/반평균 + 표 출력 공통 렌더러
-    - df: 표시할 DF (반/성별/점수 컬럼 포함 권장)
-    - highlight_func: pandas Styler 행 스타일 함수 (axis=1)
-    - table_cols: 표에 포함할 컬럼(스타일 판단용 컬럼도 포함 가능)
-    - rename_map: 표 표시용 컬럼명 매핑
-    - hide_cols: 표에서는 숨기되(style 판단에는 남기고 싶은) 컬럼명 리스트 (rename 이후 이름 기준)
+    반별 탭 + (상단) 인원/성비/반평균 + 표 출력 공통 렌더러 (UI 유지)
     """
     st.subheader(title)
 
@@ -130,11 +120,9 @@ def render_class_tabs(
         with tab:
             d = df[df[class_col] == cls].copy()
 
-            # ---- 상단 요약: 인원 / 성비 / 평균점수 ----
             n = len(d)
             m = int((d["성별"] == "남").sum()) if "성별" in d.columns else 0
             f = int((d["성별"] == "여").sum()) if "성별" in d.columns else 0
-            diff = abs(m - f)
             mean_score = d["점수"].mean() if "점수" in d.columns else None
             mean_text = "—" if mean_score is None or pd.isna(mean_score) else f"{mean_score:.2f}"
 
@@ -143,7 +131,6 @@ def render_class_tabs(
             c2.metric("성비(남/여)", f"{m}/{f}")
             c3.metric("반 평균점수", mean_text)
 
-            # ---- 표 준비 ----
             if table_cols is None:
                 table_cols = [col for col in d.columns if not col.startswith("_")]
 
@@ -160,28 +147,26 @@ def render_class_tabs(
             hide_cols = hide_cols or []
             hide_cols_present = [c for c in hide_cols if c in out.columns]
 
-            # ---- 표 출력 (스타일 적용 + 숨김 지원) ----
             if show_changed and highlight_func is not None:
                 styled = out.style.apply(highlight_func, axis=1)
-                # pandas/streamlit 환경에 따라 hide 지원 여부가 달라서 try 처리
+                # 환경별 hide 지원 차이 대비
                 try:
                     styled = styled.hide(columns=hide_cols_present)
                     st.dataframe(styled, use_container_width=True)
                 except Exception:
-                    # hide가 안 되면 표시에서만 drop (이 경우 숨긴 컬럼을 스타일에서 못 쓰게 됨)
                     st.dataframe(out.drop(columns=hide_cols_present), use_container_width=True)
             else:
                 st.dataframe(out.drop(columns=hide_cols_present), use_container_width=True)
 
 # =============================
-# 조건 데이터 구조
+# 조건 데이터 구조 (유지)
 # =============================
 @dataclass
 class Constraint:
     kind: str  # "묶기" or "떨어뜨리기"
     uids: List[str]  # 학생 uid 리스트
 
-# Union-Find for 묶기 그룹
+# Union-Find for 묶기 그룹 (유지)
 class UnionFind:
     def __init__(self, items: List[str]):
         self.parent = {x: x for x in items}
@@ -210,7 +195,6 @@ def build_blocks(df: pd.DataFrame, constraints: List[Constraint]):
     uids = df["_uid"].tolist()
     uf = UnionFind(uids)
 
-    # 묶기: 선택된 uids 모두 같은 그룹
     for c in constraints:
         if c.kind != "묶기":
             continue
@@ -220,56 +204,61 @@ def build_blocks(df: pd.DataFrame, constraints: List[Constraint]):
         for other in c.uids[1:]:
             uf.union(first, other)
 
-    # block_id -> members
     blocks: Dict[str, List[str]] = {}
     for uid in uids:
         root = uf.find(uid)
         blocks.setdefault(root, []).append(uid)
 
-    # uid -> block_id
     uid_to_block = {uid: uf.find(uid) for uid in uids}
 
-    # 떨어뜨리기 제약은 block 단위로 변환 (같은 block이면 애초에 불가능)
     not_same_edges: Set[Tuple[str, str]] = set()
     impossible = []
     for c in constraints:
         if c.kind != "떨어뜨리기":
             continue
-        # 선택된 학생들끼리 pairwise로 같은 반 금지
         us = [uid_to_block[u] for u in c.uids]
-        # 같은 블록 포함이면 모순
         if len(set(us)) < len(us):
             impossible.append(c)
             continue
         for i in range(len(us)):
-            for j in range(i+1, len(us)):
+            for j in range(i + 1, len(us)):
                 a, b = us[i], us[j]
                 if a == b:
                     continue
-                if a < b:
-                    not_same_edges.add((a, b))
-                else:
-                    not_same_edges.add((b, a))
+                not_same_edges.add((a, b) if a < b else (b, a))
 
     return blocks, uid_to_block, not_same_edges, impossible
-import math
-from typing import Dict, List, Tuple, Set, Optional
+
+# =============================
+# 조정 로직 (새로 정리: 안정적인 "반복-개선" 스왑 엔진)
+# =============================
+def _safe_float(x) -> Optional[float]:
+    try:
+        if x is None:
+            return None
+        if isinstance(x, float) and math.isnan(x):
+            return None
+        return float(x)
+    except Exception:
+        return None
 
 def block_stats(block_id: str, blocks: Dict[str, List[str]], df_index: Dict[str, Dict]):
-    """블록의 (남수, 여수, 평균점수) 계산"""
+    """블록의 (인원, 남수, 여수, 평균점수)"""
+    n = 0
     m = f = 0
     scores = []
     for uid in blocks[block_id]:
+        n += 1
         g = df_index[uid]["성별"]
         if g == "남":
             m += 1
         elif g == "여":
             f += 1
-        s = df_index[uid]["점수"]
-        if s is not None and not (isinstance(s, float) and math.isnan(s)):
-            scores.append(float(s))
+        s = _safe_float(df_index[uid]["점수"])
+        if s is not None:
+            scores.append(s)
     avg = sum(scores) / len(scores) if scores else None
-    return m, f, avg
+    return n, m, f, avg
 
 def class_counts_from_assignment(
     assignment: Dict[str, str],
@@ -277,7 +266,6 @@ def class_counts_from_assignment(
     df_index: Dict[str, Dict],
     classes: List[str],
 ):
-    """반별 (인원, 남, 여) 집계"""
     cnt = {c: {"n": 0, "m": 0, "f": 0} for c in classes}
     for bid, cls in assignment.items():
         for uid in blocks[bid]:
@@ -290,7 +278,7 @@ def class_counts_from_assignment(
     return cnt
 
 def check_hard_rules(cnt, size_min=19, size_max=21, gender_diff_max=2) -> bool:
-    for _, v in cnt.items():
+    for v in cnt.values():
         if not (size_min <= v["n"] <= size_max):
             return False
         if abs(v["m"] - v["f"]) > gender_diff_max:
@@ -304,91 +292,79 @@ def violates_not_same(assignment: Dict[str, str], not_same_edges: Set[Tuple[str,
             bad.append((a, b))
     return bad
 
-def score_distance(stats_cache, bid1: str, bid2: str) -> float:
-    """성적 유사도(작을수록 좋음). 점수 없으면 큰 값."""
-    _, _, a1 = stats_cache[bid1]
-    _, _, a2 = stats_cache[bid2]
+def _swap_assign(assignment: Dict[str, str], a: str, b: str):
+    ca, cb = assignment[a], assignment[b]
+    assignment[a], assignment[b] = cb, ca
+
+def _score_distance(stats_cache, bid1: str, bid2: str) -> float:
+    _, _, _, a1 = stats_cache[bid1]
+    _, _, _, a2 = stats_cache[bid2]
     if a1 is None or a2 is None:
-        return 10_000_000.0
+        return 1e9
     return abs(a1 - a2)
 
-def _swap_and_check(
+def _same_gender_comp(stats_cache, bid1: str, bid2: str) -> bool:
+    _, m1, f1, _ = stats_cache[bid1]
+    _, m2, f2, _ = stats_cache[bid2]
+    return (m1 == m2) and (f1 == f2)
+
+def _try_swap(
     assignment: Dict[str, str],
     bid1: str,
     bid2: str,
+    blocks,
+    df_index,
+    classes,
+    not_same_edges,
+    size_min,
+    size_max,
+    gender_diff_max,
+) -> Tuple[bool, int]:
+    """swap 적용 가능하면 적용 후 bad_edges 개수를 반환(적용된 상태)."""
+    _swap_assign(assignment, bid1, bid2)
+    cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
+    if not check_hard_rules(cnt, size_min, size_max, gender_diff_max):
+        _swap_assign(assignment, bid1, bid2)
+        return False, 10**9
+    bad = len(violates_not_same(assignment, not_same_edges))
+    return True, bad
+
+def _choose_helper_blocks(
+    assignment: Dict[str, str],
     blocks: Dict[str, List[str]],
     df_index: Dict[str, Dict],
+    stats_cache: Dict[str, Tuple[int,int,int,Optional[float]]],
     classes: List[str],
-    not_same_edges: Set[Tuple[str, str]],
-    size_min: int,
-    size_max: int,
-    gender_diff_max: int,
-) -> Tuple[bool, bool, bool]:
+    target_bid: str,
+    base_pool: Set[str],
+    k_per_class: int = 2,
+    score_window: float = 30.0,
+) -> Set[str]:
     """
-    swap 후:
-    - hard_ok: 인원/성비 하드 규칙 만족?
-    - edges_ok: not_same 위반이 '줄어드는' 방향?
-    - any_edges_violation: 현재 위반 존재 여부(디버그)
+    후보가 막히면, 각 반에서 '성별/점수 유사' 블록을 조금씩 풀(pool 확장).
+    - base_pool: 현재 허용 풀(보통 조건대상 블록)
     """
-    before_bad = violates_not_same(assignment, not_same_edges)
-    ca, cb = assignment[bid1], assignment[bid2]
-    assignment[bid1], assignment[bid2] = cb, ca
+    _, tm, tf, tavg = stats_cache[target_bid]
+    tavg = 0.0 if tavg is None else float(tavg)
 
-    cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
-    hard_ok = check_hard_rules(cnt, size_min, size_max, gender_diff_max)
-
-    after_bad = violates_not_same(assignment, not_same_edges)
-    edges_ok = (len(after_bad) < len(before_bad))
-
-    assignment[bid1], assignment[bid2] = ca, cb
-    return hard_ok, edges_ok, (len(after_bad) > 0)
-def expand_movable_candidates(
-    df,
-    blocks,
-    assignment,
-    df_index,
-    movable_blocks,
-    move_bid,
-    classes,
-    k_per_class=2,
-    score_window=30.0,
-):
-    """
-    swap/move+fix가 막힐 때, '보정 후보군'을 임시 movable로 확장
-    - 같은 성별 우선
-    - 점수 차가 score_window 이내인 학생들 우선
-    - 각 반에서 k_per_class명씩만 추가
-    """
-    m1, f1, avg1 = block_stats(move_bid, blocks, df_index)
-    # move_bid가 1명 블록일 때 성별을 기준으로 잡기
-    target_gender = None
-    for uid in blocks[move_bid]:
-        g = df_index[uid]["성별"]
-        if g in ("남", "여"):
-            target_gender = g
-            break
-
-    if avg1 is None:
-        avg1 = 0.0
-
-    extra = set()
+    extra: Set[str] = set()
 
     for cls in classes:
-        # 현재 cls 반에 있는 블록들
-        bids_in_cls = [bid for bid, c in assignment.items() if c == cls and bid not in movable_blocks and bid != move_bid]
+        # cls 반에 있는 블록 중 base_pool에 없는 블록
+        in_cls = [bid for bid, c in assignment.items() if c == cls and bid not in base_pool and bid != target_bid]
+
         scored = []
-        for bid in bids_in_cls:
-            m2, f2, avg2 = block_stats(bid, blocks, df_index)
-            # 성별 우선(블록 단위라 완벽치 않지만, 1명 블록이면 거의 맞음)
-            if target_gender == "남" and f2 > 0 and m2 == 0:
+        for bid in in_cls:
+            _, m, f, avg = stats_cache[bid]
+            # 성별 구성 완전 반대면 제외(대체로 교환 후보로 부적절)
+            if (tm > 0 and tf == 0) and (f > 0 and m == 0):
                 continue
-            if target_gender == "여" and m2 > 0 and f2 == 0:
-                continue
-
-            if avg2 is None:
+            if (tf > 0 and tm == 0) and (m > 0 and f == 0):
                 continue
 
-            dist = abs(avg2 - avg1)
+            if avg is None:
+                continue
+            dist = abs(float(avg) - tavg)
             if dist <= score_window:
                 scored.append((dist, bid))
 
@@ -396,242 +372,232 @@ def expand_movable_candidates(
         for _, bid in scored[:k_per_class]:
             extra.add(bid)
 
-    return movable_blocks | extra
+    return base_pool | extra
 
-def adjust_classes_min_change_swap_only_v2(
-    df,  # df_all
-    constraints,
-    blocks,
-    uid_to_block,
-    not_same_edges,
+def adjust_classes_engine(
+    df: pd.DataFrame,
+    constraints: List[Constraint],
+    blocks: Dict[str, List[str]],
+    uid_to_block: Dict[str, str],
+    not_same_edges: Set[Tuple[str, str]],
     size_min=19,
     size_max=21,
     gender_diff_max=2,
-    relax_gender_swap=True,   # ✅ 추가요구 2: 성별구성 동일 후보 없을 때 완화
     max_iters=5000,
 ) -> Tuple[Dict[str, str], str]:
     """
-    정책:
-    - 조건대상 블록만 이동 가능
-    - 이동은 swap만
-    - 1순위: 블록 (남수,여수) 동일한 swap
-    - 2순위(옵션): 동일 swap 없으면, 하드규칙(인원/성비)을 유지하는 범위에서 swap 허용
-    - 성적은 '유사'한 블록끼리 swap(점수 평균 차 최소) 우선
-
-    반환:
-    - assignment(block->class)
-    - diagnostics(실패/진행 상세 로그)
+    안정형 엔진:
+    - 기본은 '원본반 유지' assignment
+    - 떨어뜨리기 위반을 하나씩 잡아서, 스왑 후보를 찾고 bad_edges를 줄이는 방향으로 반복 개선
+    - 후보가 막히면 '보정 후보군(헬퍼)'를 소량 확장(성별/점수 유사)
+    - 하드 규칙(인원/성비)은 항상 유지
     """
-    diag_lines = []
+    diag: List[str] = []
 
-    # uid -> info
-    df_index = {}
-    original_class_uid = {}
+    # uid->info
+    df_index: Dict[str, Dict] = {}
+    original_class_uid: Dict[str, str] = {}
     for _, r in df.iterrows():
         uid = r["_uid"]
-        df_index[uid] = {"성별": r["성별"], "점수": r["점수"]}
-        original_class_uid[uid] = r["반"]
+        df_index[uid] = {"성별": r.get("성별", ""), "점수": r.get("점수", None)}
+        original_class_uid[uid] = r.get("반", "")
 
     classes = sorted([c for c in df["반"].unique() if str(c).strip() != ""])
     if not classes:
         raise ValueError("반(B열)이 비어 있어 조정을 진행할 수 없습니다.")
 
-    # 초기 assignment: 블록 원본반 최빈값
-    assignment: Dict[str, str] = {}
+    # 블록의 원본반(최빈)
+    original_class_block: Dict[str, str] = {}
     for bid, members in blocks.items():
         counts = {}
         for uid in members:
-            oc = original_class_uid[uid]
+            oc = original_class_uid.get(uid, "")
+            if str(oc).strip() == "":
+                continue
             counts[oc] = counts.get(oc, 0) + 1
-        counts = {k: v for k, v in counts.items() if str(k).strip() != ""}
-        assignment[bid] = max(counts.items(), key=lambda x: x[1])[0] if counts else classes[0]
+        original_class_block[bid] = max(counts.items(), key=lambda x: x[1])[0] if counts else classes[0]
 
-    # movable blocks: 조건대상 uid 포함 블록만
-    constrained_uids = {u for c in constraints for u in c.uids}
-    movable_blocks = {uid_to_block[u] for u in constrained_uids if u in uid_to_block}
-    diag_lines.append(f"- movable blocks: {len(movable_blocks)}개 (조건대상 포함 블록만 이동 가능)")
+    # 초기 assignment: 원본반 유지
+    assignment: Dict[str, str] = {bid: original_class_block[bid] for bid in blocks.keys()}
 
-    # 원본이 하드규칙을 만족해야 함(정책상 비조건대상 이동 금지이므로)
-    cnt0 = class_counts_from_assignment(assignment, blocks, df_index, classes)
-    if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
-        diag_lines.append("- WARN: 원본 배정이 하드 규칙을 만족하지 않음 → 보정 모드로 최소 swap 수행")
-        # ✅ 보정 모드에서는 movable_blocks 제한을 완화 (하지만 'swap만'은 유지)
-        #    조건대상이 너무 적으면 규칙을 만족시키는 것 자체가 불가능하므로, 전체 블록을 후보로 열어줌
-        movable_blocks_for_fix = set(blocks.keys())
-    else:
-        movable_blocks_for_fix = movable_blocks
-    
     stats_cache = {bid: block_stats(bid, blocks, df_index) for bid in blocks.keys()}
 
+    # movable 풀: 조건에 포함된 uid의 블록
+    constrained_uids = {u for c in constraints for u in c.uids}
+    base_movable = {uid_to_block[u] for u in constrained_uids if u in uid_to_block}
+    diag.append(f"- movable blocks(base): {len(base_movable)}개 (조건대상 포함 블록)")
+
+    # 원본이 하드규칙을 만족하지 않으면: 최소한의 전체 swap으로 하드규칙을 먼저 맞춰야 함
+    cnt0 = class_counts_from_assignment(assignment, blocks, df_index, classes)
+    if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
+        diag.append("- WARN: 원본 배정이 하드 규칙(인원/성비)을 만족하지 않아, 하드규칙 맞추기용 전체 swap(최소)을 허용합니다.")
+        # 하드규칙 보정 단계: 풀을 전체로 확장
+        movable_pool = set(blocks.keys())
+    else:
+        movable_pool = set(base_movable)
+
+    # 하드규칙 보정(필요 시): 간단 스왑 반복 (bad_edges는 신경 X)
+    def _fix_hard_rules(max_fix_iters=3000):
+        nonlocal movable_pool
+        for i in range(max_fix_iters):
+            cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
+            if check_hard_rules(cnt, size_min, size_max, gender_diff_max):
+                diag.append(f"- hard rules fix: OK (iters={i})")
+                return True
+            # 가장 심한 반/성비를 가진 class를 찾아 스왑
+            # 목표: 성비차/인원초과/인원미달 완화
+            worst_cls = None
+            worst_score = -1
+            for c in classes:
+                v = cnt[c]
+                size_pen = 0
+                if v["n"] < size_min:
+                    size_pen = (size_min - v["n"]) * 10
+                elif v["n"] > size_max:
+                    size_pen = (v["n"] - size_max) * 10
+                gender_pen = max(0, abs(v["m"] - v["f"]) - gender_diff_max) * 5
+                s = size_pen + gender_pen
+                if s > worst_score:
+                    worst_score = s
+                    worst_cls = c
+            if worst_cls is None or worst_score <= 0:
+                return False
+
+            # worst_cls에 있는 블록 하나와 다른 반 블록 하나를 교환해 규칙 개선 시도
+            in_worst = [bid for bid, c in assignment.items() if c == worst_cls]
+            candidates = [bid for bid in movable_pool if assignment[bid] != worst_cls]
+            if not in_worst or not candidates:
+                return False
+
+            # 간단히 점수 유사 + 성별구성 동일 우선
+            best_pair = None
+            best_metric = 1e18
+            for a in in_worst[:80]:
+                for b in candidates[:80]:
+                    # 스왑 후 규칙 체크
+                    _swap_assign(assignment, a, b)
+                    cnt2 = class_counts_from_assignment(assignment, blocks, df_index, classes)
+                    ok = check_hard_rules(cnt2, size_min, size_max, gender_diff_max)
+                    # 완벽 ok면 채택
+                    if ok:
+                        diag.append(f"- hard-fix swap: {a} <-> {b}")
+                        return True
+                    # 아니면 개선 정도(최악 점수 감소)로 평가
+                    # 원복하고 후보 점수
+                    _swap_assign(assignment, a, b)
+
+                    # 휴리스틱 metric: 성별구성 동일/점수차 우선
+                    metric = (_score_distance(stats_cache, a, b) +
+                              (0 if _same_gender_comp(stats_cache, a, b) else 500.0))
+                    if metric < best_metric:
+                        best_metric = metric
+                        best_pair = (a, b)
+
+            if best_pair:
+                a, b = best_pair
+                _swap_assign(assignment, a, b)
+        diag.append("- hard rules fix: FAIL")
+        return False
+
+    if not check_hard_rules(cnt0, size_min, size_max, gender_diff_max):
+        if not _fix_hard_rules():
+            raise ValueError("\n".join(diag + ["- FAIL: 하드 규칙(인원/성비)을 만족시키지 못했습니다. 엑셀 원본 배정부터 확인이 필요합니다."]))
+
+    # not_same 해결 단계
+    helper_k = 2
+    helper_win = 30.0
+
     for it in range(max_iters):
-        bad_edges = violates_not_same(assignment, not_same_edges)
-        if not bad_edges:
-            diag_lines.append(f"- SUCCESS: 위반 0개. swap {it}회 이내 해결")
-            return assignment, "\n".join(diag_lines)
+        bad = violates_not_same(assignment, not_same_edges)
+        if not bad:
+            diag.append(f"- SUCCESS: 떨어뜨리기 위반 0개. iters={it}")
+            return assignment, "\n".join(diag)
 
-        a, b = bad_edges[0]
-        ca = assignment.get(a)
-        diag_lines.append(f"\n[ITER {it}] violation edge: ({a},{b}) in class={ca}")
+        a, b = bad[0]
+        cls = assignment[a]
+        diag.append(f"\n[ITER {it}] violation: ({a},{b}) in class={cls}")
 
-        # 둘 다 고정이면 정책상 해결 불가
-        if a not in movable_blocks and b not in movable_blocks:
-            diag_lines.append("- FAIL: 위반(edge)의 두 블록 모두 movable이 아님(조건대상 아님) → 정책상 이동 불가")
-            raise ValueError("\n".join(diag_lines))
+        # 이동시킬 대상 선택: 우선 base_movable에 있는 쪽, 아니면 movable_pool에 있는 쪽
+        if a in base_movable:
+            move_bid = a
+        elif b in base_movable:
+            move_bid = b
+        elif a in movable_pool:
+            move_bid = a
+        elif b in movable_pool:
+            move_bid = b
+        else:
+            raise ValueError("\n".join(diag + ["- FAIL: 위반 두 블록 모두 이동 불가(정책상)."]))
 
-        # 이동할 블록 선택(가능하면 movable인 쪽)
-        move_bid = a if a in movable_blocks else b
-        other_in_edge = b if move_bid == a else a
-        cur_cls = assignment[move_bid]
-
-        m1, f1, avg1 = stats_cache[move_bid]
-        diag_lines.append(f"- move_bid={move_bid} (m={m1}, f={f1}, avg={avg1}) from class {cur_cls}")
-
-        # 후보 탐색: 1) 성별구성 동일 swap, 2) 완화 swap(옵션)
-        candidates_same = []
-        candidates_relax = []
-
-        # 후보 이유 집계(진단용)
-        reasons = {"same_class": 0, "not_movable": 0, "gender_comp_mismatch": 0, "hard_fail": 0, "no_improve": 0}
-        
-        for cand in movable_blocks_for_fix:
-            if cand == move_bid:
-                continue
-
-            cand_cls = assignment[cand]
-            if cand_cls == cur_cls:
-                reasons["same_class"] += 1
-                continue
-
-            # 성별구성 비교
-            m2, f2, _ = stats_cache[cand]
-            same_comp = (m2 == m1 and f2 == f1)
-
-            # 1차: 동일 구성만
-            if same_comp:
-                hard_ok, edges_ok, _ = _swap_and_check(
-                    assignment, move_bid, cand, blocks, df_index, classes, not_same_edges,
-                    size_min, size_max, gender_diff_max
-                )
-                if not hard_ok:
-                    reasons["hard_fail"] += 1
-                    continue
-                if not edges_ok:
-                    reasons["no_improve"] += 1
-                    continue
-                candidates_same.append(cand)
-            else:
-                reasons["gender_comp_mismatch"] += 1
-                if not relax_gender_swap:
-                    continue
-                # 2차: 완화(구성 다르더라도) swap 후 하드 규칙 유지 + 위반 감소면 OK
-                hard_ok, edges_ok, _ = _swap_and_check(
-                    assignment, move_bid, cand, blocks, df_index, classes, not_same_edges,
-                    size_min, size_max, gender_diff_max
-                )
-                if not hard_ok:
-                    reasons["hard_fail"] += 1
-                    continue
-                if not edges_ok:
-                    reasons["no_improve"] += 1
-                    continue
-                candidates_relax.append(cand)
-
-        diag_lines.append(f"- candidates_same_comp: {len(candidates_same)}개")
-        if relax_gender_swap:
-            diag_lines.append(f"- candidates_relaxed: {len(candidates_relax)}개 (하드 규칙 유지하는 swap 허용)")
-
-        # 후보가 없으면 상세 진단 후 실패
-        if not candidates_same and (not relax_gender_swap or not candidates_relax):
-            diag_lines.append("- INFO: swap 후보가 없어 1-step move + 보정(swap) 모드 시도")
-        
-            # 1) move_bid를 다른 반으로 '이동' 시도 (조건대상만)
-            moved_ok = False
-            for target_cls in classes:
-                if target_cls == cur_cls:
-                    continue
-        
-                # move 시도
-                assignment_backup = dict(assignment)
-                assignment[move_bid] = target_cls
-        
-                # move 후 하드 규칙이 이미 OK면 그대로 채택
-                cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
-                if check_hard_rules(cnt, size_min, size_max, gender_diff_max):
-                    # 위반(edge)이 줄어드는지 확인
-                    if len(violates_not_same(assignment, not_same_edges)) < len(bad_edges):
-                        diag_lines.append(f"- MOVE: {move_bid} {cur_cls} → {target_cls} (보정 없이 해결)")
-                        moved_ok = True
-                        break
-        
-                # 2) 하드 규칙 깨졌다면: swap으로 보정
-                #    (우선 movable_blocks 안에서 찾고, 없으면 전체 블록에서 찾는다)
-                fix_pool_primary = list(movable_blocks)
-                fix_pool_fallback = list(blocks.keys())
-        
-                def try_fix(pool):
-                    nonlocal moved_ok
-                    for cand in pool:
-                        if cand == move_bid:
-                            continue
-                        # cand는 target_cls에 있어야 swap으로 인원/성비 조정이 가능
-                        if assignment[cand] != cur_cls:
-                            continue
-        
-                        hard_ok, edges_ok, _ = _swap_and_check(
-                            assignment, move_bid, cand, blocks, df_index, classes, not_same_edges,
-                            size_min, size_max, gender_diff_max
-                        )
-                        if not hard_ok or not edges_ok:
-                            continue
-        
-                        # score 유사도도 고려(가능하면)
-                        assignment[move_bid], assignment[cand] = assignment[cand], assignment[move_bid]
-                        diag_lines.append(f"- MOVE+SWAP FIX: {move_bid}→{target_cls} 후 {cand}와 swap으로 보정")
-                        moved_ok = True
-                        return
-        
-                try_fix(fix_pool_primary)
-                if not moved_ok:
-                    try_fix(fix_pool_fallback)
-        
-                if moved_ok:
-                    break
-        
-                # 실패하면 원복하고 다음 target_cls 시도
-                assignment = assignment_backup
-        
-            if moved_ok:
-                continue
-            # ---- 여기서 바로 실패하지 말고, 임시 후보군 확장 후 한 번 더 시도 ----
-            diag_lines.append("- INFO: 임시 보정 후보군(성별/점수 유사) 확장 후 재시도")
-            
-            movable_blocks = expand_movable_candidates(
-                df=df,
-                blocks=blocks,
-                assignment=assignment,
-                df_index=df_index,
-                movable_blocks=movable_blocks,
-                move_bid=move_bid,
-                classes=classes,
-                k_per_class=2,      # 반당 2명만 추가 후보
-                score_window=30.0,  # 점수 ±30 안쪽만
-            )
-            
-            diag_lines.append(f"- expanded movable blocks: {len(movable_blocks)}개")
-            
-            # 확장 후에는 이번 ITER을 다시 돌려서 후보 탐색을 재수행
+        # 후보 풀: 현재 movable_pool 기준
+        candidates = [cand for cand in movable_pool if cand != move_bid and assignment[cand] != assignment[move_bid]]
+        if not candidates:
+            # 후보가 아예 없다면 helper 확장
+            movable_pool = _choose_helper_blocks(assignment, blocks, df_index, stats_cache, classes, move_bid, movable_pool, helper_k, helper_win)
+            helper_k = min(helper_k + 1, 6)
+            helper_win = min(helper_win + 20.0, 120.0)
+            diag.append(f"- expand helper pool -> {len(movable_pool)} blocks (k={helper_k}, win={helper_win})")
             continue
 
-            # move+fix도 안되면 실패
-            diag_lines.append("- FAIL: swap도 없고 move+보정도 불가")
-            diag_lines.append("  (조건대상 부족 또는 하드 규칙 때문에 이동/보정이 막힘)")
-            raise ValueError("\n".join(diag_lines))
+        # 현재 bad 개수
+        cur_bad = len(bad)
 
-    diag_lines.append("- FAIL: max_iters 도달(해결 못함)")
-    raise ValueError("\n".join(diag_lines))
-    
+        # 후보 평가: bad_edges 최소, 성별구성 동일 우선, 점수유사 우선, 변경 최소(원본반 유지)
+        best = None
+        best_key = None
+
+        for cand in candidates:
+            # 성별구성 동일을 강하게 선호
+            same_comp = _same_gender_comp(stats_cache, move_bid, cand)
+            ok, new_bad = _try_swap(
+                assignment, move_bid, cand,
+                blocks, df_index, classes, not_same_edges,
+                size_min, size_max, gender_diff_max
+            )
+            if not ok:
+                continue
+
+            # 스왑은 적용된 상태이므로 이동/변경 비용 계산 후 원복(평가만)
+            # moved_count: 원본반과 다르면 1로 카운트(블록 단위 근사)
+            moved_after = 0
+            for bid in (move_bid, cand):
+                if assignment[bid] != original_class_block[bid]:
+                    moved_after += 1
+
+            # 점수 차
+            sd = _score_distance(stats_cache, move_bid, cand)
+
+            # key: (bad_edges, moved_after, not same_comp, score_dist)
+            key = (new_bad, moved_after, 0 if same_comp else 1, sd)
+
+            # 원복
+            _swap_assign(assignment, move_bid, cand)
+
+            # 개선이 없으면(위반 개수 동일 이상) 기본적으로 스킵.
+            # 다만 stuck 방지를 위해 동일이면 moved/comp가 좋아지면 허용.
+            if new_bad > cur_bad:
+                continue
+
+            if best is None or key < best_key:
+                best = cand
+                best_key = key
+
+        if best is None:
+            # 막힘: helper 확장
+            movable_pool = _choose_helper_blocks(assignment, blocks, df_index, stats_cache, classes, move_bid, movable_pool, helper_k, helper_win)
+            helper_k = min(helper_k + 1, 6)
+            helper_win = min(helper_win + 20.0, 120.0)
+            diag.append(f"- NO swap candidate improving/hard-ok. expand pool -> {len(movable_pool)} blocks (k={helper_k}, win={helper_win})")
+            continue
+
+        # best swap 적용
+        _swap_assign(assignment, move_bid, best)
+        diag.append(f"- SWAP: {move_bid}({original_class_block[move_bid]}→{assignment[move_bid]}) <-> {best}({original_class_block[best]}→{assignment[best]}) | key={best_key}")
+
+    raise ValueError("\n".join(diag + [f"- FAIL: max_iters({max_iters}) 도달(해결 못함)"]))
+
 # =============================
-# 세션 상태 초기화
+# 세션 상태 초기화 (유지)
 # =============================
 if "did_adjust" not in st.session_state:
     st.session_state.did_adjust = False
@@ -642,9 +608,8 @@ if "result_df" not in st.session_state:
 if "picker_reset" not in st.session_state:
     st.session_state.picker_reset = 0
 
-
 # =============================
-# 업로드 & 데이터 구성
+# 업로드 & 데이터 구성 (UI 유지)
 # =============================
 uploaded = st.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
 if not uploaded:
@@ -682,31 +647,24 @@ if not frames:
 df_all = pd.concat(frames, ignore_index=True)
 view_base = df_all.copy()
 
-# 이름 표시 모드 반영(업로드 화면용)
-# name_mode_before 라디오를 쓰고 있다면 그걸, 아니면 기본은 원본
-if "name_mode_before" in st.session_state:
-    nm = st.session_state.name_mode_before
-else:
-    nm = "원본"
-
+# 이름 표시 모드(업로드 화면용)
+nm_before = st.session_state.get("name_mode_before", "원본")
 if "이름(원본)" in view_base.columns and "이름(한글만)" in view_base.columns:
-    view_base["이름"] = view_base["이름(한글만)"] if nm == "한글만" else view_base["이름(원본)"]
+    view_base["이름"] = view_base["이름(한글만)"] if nm_before == "한글만" else view_base["이름(원본)"]
 elif "이름" not in view_base.columns:
-    # 최후 fallback
     view_base["이름"] = view_base.get("이름(원본)", "")
 
-# 이전반 표시 컬럼 보장
+# 이전반 표시
 if "이전반(표시)" not in view_base.columns:
     if "이전반_raw" in view_base.columns:
         view_base["이전반(표시)"] = view_base["이전반_raw"].map(format_prev_class_display)
     else:
         view_base["이전반(표시)"] = ""
 
-# 업로드 화면 정렬(기본: 번호순)
+# 정렬(기본 번호순)
 view_base = view_base.sort_values(by=["반", "번호"], ascending=[True, True], na_position="last")
 
-
-# ---- 업로드 직후(조정 전): 반 테이블만 표시 ----
+# ---- 업로드 직후(조정 전) ----
 render_class_tabs(
     df=view_base,
     title="📋 반별 학생 목록",
@@ -716,21 +674,15 @@ render_class_tabs(
 )
 
 # =============================
-# 조건 추가 UI (전체 학생 기준, 별도 검색창 없음)
+# 조건 추가 UI (유지)
 # =============================
 st.subheader("🧩 조건 추가(묶기 / 떨어뜨리기)")
 
 with st.container(border=True):
     kind = st.radio("조건 종류", ["묶기", "떨어뜨리기"], horizontal=True, key="constraint_kind")
 
-    # ✅ 전체 학생 기준 옵션 목록 만들기 (탭/반 무관)
-    # - 표시 이름은 현재 name_mode(원본/한글만) 설정을 따름
-    # - multiselect는 기본적으로 타이핑 검색 지원 (따로 검색창 불필요)
-    base = view_base.copy()  # view_base는 df_all 기반으로 만들어져 있고, 이름/정렬 반영된 DF
+    base = view_base.copy()
 
-    # 선택 라벨에 필요한 컬럼 준비
-    # 이전반(표시), 이름, 성별, 점수, 현재반/번호를 함께 보여주기
-    # uid -> label 매핑
     options = base["_uid"].tolist()
     uid_to_label = {}
 
@@ -741,7 +693,6 @@ with st.container(border=True):
         gender = r.get("성별", "")
         score = r.get("점수", None)
 
-        # 점수 표시 포맷
         if pd.isna(score):
             score_txt = ""
         else:
@@ -755,7 +706,6 @@ with st.container(border=True):
         num = r.get("번호", "")
         num_txt = "" if pd.isna(num) else str(int(num)) if float(num).is_integer() else str(num)
 
-        # ✅ 멀티셀렉트에서 검색하기 좋게: (이름) 앞쪽에 두고 정보 붙이기
         uid_to_label[uid] = f"{nm} | {prev_disp} | {gender} | 점수:{score_txt} | 현재 {cur_class}반 {num_txt}번"
 
     selected_uids = st.multiselect(
@@ -775,7 +725,6 @@ with st.container(border=True):
             st.success(f"{kind} 조건 1개가 추가되었습니다. (대상 {len(selected_uids)}명)")
             st.rerun()
 
-# 조건 목록 표시/삭제
 st.subheader("📌 추가된 조건 목록")
 if not st.session_state.constraints:
     st.info("아직 추가된 조건이 없습니다.")
@@ -783,7 +732,6 @@ else:
     for i, c in enumerate(st.session_state.constraints):
         with st.container(border=True):
             st.write(f"**#{i+1} {c.kind}** (대상 {len(c.uids)}명)")
-            # 라벨로 표시
             lines = []
             for uid in c.uids:
                 row = view_base[view_base["_uid"] == uid].head(1)
@@ -798,7 +746,7 @@ else:
                 st.rerun()
 
 # =============================
-# 조정 실행
+# 조정 실행 (UI 유지)
 # =============================
 st.subheader("🛠️ 반편성 조정")
 
@@ -806,33 +754,28 @@ run = st.button("✅ 조정 누르기", type="primary", use_container_width=True
 
 if run:
     try:
-        # 1) 블록 만들기 (기존 build_blocks 그대로 사용)
         blocks, uid_to_block, not_same_edges, impossible = build_blocks(df_all, st.session_state.constraints)
         if impossible:
             raise ValueError("조건이 서로 모순입니다. '떨어뜨리기'가 '묶기'로 묶인 학생들을 포함하고 있습니다.")
 
-        # 2) 새 조정 함수 호출 (block->class + diagnostics 반환)
-        assignment_block_to_class, diagnostics = adjust_classes_min_change_swap_only_v2(
-            df_all,
-            st.session_state.constraints,
-            blocks,
-            uid_to_block,
-            not_same_edges,
+        assignment_block_to_class, diagnostics = adjust_classes_engine(
+            df=df_all,
+            constraints=st.session_state.constraints,
+            blocks=blocks,
+            uid_to_block=uid_to_block,
+            not_same_edges=not_same_edges,
             size_min=19,
             size_max=21,
             gender_diff_max=2,
-            relax_gender_swap=True,
             max_iters=5000,
         )
 
-        # 3) block->class 를 uid->class로 풀기
         uid_new_class = {}
         for bid, members in blocks.items():
             new_cls = assignment_block_to_class[bid]
             for uid in members:
                 uid_new_class[uid] = new_cls
-        
-        # (선택) 실패/성공 진단 로그 UI
+
         with st.expander("조정 진단 로그", expanded=False):
             st.text(diagnostics)
 
@@ -840,15 +783,10 @@ if run:
         result["반_원본"] = result["반"]
         result["반"] = result["_uid"].map(uid_new_class)
 
-        # 변경 여부
-        result["변경"] = result["반"] != result["반_원본"]
-
-        # 표시용 컬럼 구성(학년 제외, 시트 제외)
+        result["변경"] = result["반"].astype(str) != result["반_원본"].astype(str)
         result["이전반(표시)"] = result["이전반_raw"].map(format_prev_class_display)
-        result_display = result.copy()
 
-        st.session_state.result_df = result_display
-
+        st.session_state.result_df = result.copy()
         st.success("조정 완료! 아래에서 조정된 테이블을 확인하세요.")
 
     except Exception as e:
@@ -856,14 +794,16 @@ if run:
         st.exception(e)
 
 # =============================
-# 결과 표시 + 다운로드
+# 결과 표시 + 다운로드 (UI 유지)
 # =============================
 if st.session_state.result_df is not None:
     res = st.session_state.result_df.copy()
-    nm = st.session_state.get("name_mode_after", "원본")  # 라디오와 동일 key
+
+    # 이름 컬럼 보장
+    nm_after = st.session_state.get("name_mode_after", "원본")
     if "이름" not in res.columns:
         if "이름(원본)" in res.columns and "이름(한글만)" in res.columns:
-            res["이름"] = res["이름(한글만)"] if nm == "한글만" else res["이름(원본)"]
+            res["이름"] = res["이름(한글만)"] if nm_after == "한글만" else res["이름(원본)"]
         elif "이름(원본)" in res.columns:
             res["이름"] = res["이름(원본)"]
         elif "이름(한글만)" in res.columns:
@@ -871,36 +811,23 @@ if st.session_state.result_df is not None:
         else:
             raise ValueError("조정 결과(res)에 이름 관련 컬럼이 없습니다. result_df 생성 시 df_all의 이름 컬럼을 포함하세요.")
 
-    if "반_원본" not in res.columns and "원본반" in res.columns:
-        res["반_원본"] = res["원본반"]
     if "반_원본" not in res.columns:
-        # 최소한 현재 반을 원본으로 가정(임시)
         res["반_원본"] = res.get("반", "")
-    
-    if "변경" not in res.columns:
-        res["변경"] = (res.get("반", "") != res.get("반_원본", ""))
-    
-    if "이전반(표시)" not in res.columns:
-        # 이전반_raw 또는 이전반이 있으면 표시 변환
-        if "이전반_raw" in res.columns:
-            res["이전반(표시)"] = res["이전반_raw"].map(format_prev_class_display)
-        elif "이전반" in res.columns:
-            res["이전반(표시)"] = res["이전반"].map(format_prev_class_display)
-        else:
-            res["이전반(표시)"] = ""
-    
-    if "조건대상" not in res.columns:
-        # 조건 리스트가 있다면 uid 기반으로 계산 가능
-        constrained_uids = {u for c in st.session_state.constraints for u in c.uids} if "constraints" in st.session_state else set()
-        if "_uid" in res.columns:
-            res["조건대상"] = res["_uid"].isin(constrained_uids)
-        else:
-            res["조건대상"] = False
 
+    if "변경" not in res.columns:
+        res["변경"] = (res["반"].astype(str) != res["반_원본"].astype(str))
+
+    if "이전반(표시)" not in res.columns:
+        res["이전반(표시)"] = res["이전반_raw"].map(format_prev_class_display) if "이전반_raw" in res.columns else ""
+
+    if "조건대상" not in res.columns:
+        constrained_uids = {u for c in st.session_state.constraints for u in c.uids} if "constraints" in st.session_state else set()
+        res["조건대상"] = res["_uid"].isin(constrained_uids) if "_uid" in res.columns else False
+
+    # ✅ 스타일(다크/라이트 무난)
     def highlight_rows(row):
-        # 다크/라이트 모두 무난한 반투명 오버레이
-        moved_bg = "background-color: rgba(255, 255, 255, 0.18);"         # 변경됨
-        constraint_bg = "background-color: rgba(0, 180, 255, 0.14);"      # 조건대상
+        moved_bg = "background-color: rgba(255, 255, 255, 0.18);"
+        constraint_bg = "background-color: rgba(0, 180, 255, 0.14);"
         both_bg = (
             "background-color: rgba(0, 180, 255, 0.14);"
             "box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.06);"
@@ -935,58 +862,37 @@ if st.session_state.result_df is not None:
         hide_cols=["조건대상", "변경"],
     )
 
-    # ✅ 반별 테이블(조정 결과) 아래: 조정된 학생 목록(원본 대비 반 변경)
+    # 조정된 학생 목록
     st.subheader("🔁 조정된 학생 목록(원본 대비 반 변경)")
-    
-    # 변경 컬럼이 없으면 생성(안전)
-    if "변경" not in res.columns:
-        res["변경"] = (res["반"].astype(str) != res["반_원본"].astype(str))
-    
     moved = res[res["변경"] == True].copy()
-    
-    # 보기 좋게 정렬: 원본반 → 조정반 → 번호
+
     sort_cols = [c for c in ["반_원본", "반", "번호", "점수"] if c in moved.columns]
     if sort_cols:
-        moved = moved.sort_values(by=sort_cols, ascending=[True, True, True, False][:len(sort_cols)], na_position="last")
-    
-    # 표시 컬럼(있는 것만)
+        asc = [True] * len(sort_cols)
+        if "점수" in sort_cols:
+            # 점수는 내림차순
+            asc[sort_cols.index("점수")] = False
+        moved = moved.sort_values(by=sort_cols, ascending=asc, na_position="last")
+
     moved_cols = [c for c in ["_excel_row", "반_원본", "반", "번호", "이름", "성별", "점수", "이전반(표시)"] if c in moved.columns]
-    moved_rename = {
-        "_excel_row": "엑셀행번호",
-        "반_원본": "원본반",
-        "반": "조정반",
-        "이전반(표시)": "이전반",
-    }
-    
+    moved_rename = {"_excel_row": "엑셀행번호", "반_원본": "원본반", "반": "조정반", "이전반(표시)": "이전반"}
+
     if moved.empty:
         st.info("조정된 학생이 없습니다. (원본 배정을 그대로 유지했습니다.)")
     else:
-        st.dataframe(
-            moved[moved_cols].rename(columns=moved_rename),
-            use_container_width=True
-        )
+        st.dataframe(moved[moved_cols].rename(columns=moved_rename), use_container_width=True)
 
-    
-                
     # =============================
-    # 엑셀 다운로드 생성
+    # 엑셀 다운로드 (UI 유지)
     # =============================
     st.subheader("⬇️ 엑셀 다운로드")
 
-    # 다운로드용 원본 데이터(학년 포함)로 재구성
-    # 요구 형식: A학년, B반, C번호, D이름, E생년월일, F성별, G점수, H(빈칸), I이전반
     download_df = df_all.copy()
-    # 조정된 반 반영
-    # (result_df의 반이 조정 반이므로 uid 매핑)
-    # st.session_state.result_df에는 반이 조정반으로 들어있음.
     uid_to_new = {uid: cls for uid, cls in zip(res["_uid"], res["반"])}
     download_df["반"] = download_df["_uid"].map(uid_to_new)
 
-    # 출력 이름은 "원본 이름"으로 저장(파일은 사람이 읽는 원본이 보통 더 좋음)
-    # 원하시면 한글만으로 바꾸는 옵션도 추가 가능
     download_df["H_빈칸"] = ""
 
-    # 이전반은 파일에서는 원래 값(숫자/텍스트)을 유지
     out_cols = pd.DataFrame({
         "학년": download_df["학년"],
         "반": download_df["반"],
@@ -995,24 +901,19 @@ if st.session_state.result_df is not None:
         "생년월일": download_df["생년월일"],
         "성별": download_df["성별"],
         "점수": download_df["점수"],
-        "": download_df["H_빈칸"],         # H열 빈칸
-        "이전 반": download_df["이전반_raw"],  # I열
+        "": download_df["H_빈칸"],              # H열 빈칸
+        "이전 반": download_df["이전반_raw"],    # I열
     })
 
-    # 반별 시트로 저장
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        # 시트명: '2-5'처럼 만들기 (학년은 2로 가정하되, 학년 값이 있으면 첫 값 사용)
-        # 학년 값이 시트마다 다르면 첫 유효값 사용
-        default_grade = int(pd.to_numeric(download_df["학년"], errors="coerce").dropna().iloc[0]) if pd.to_numeric(download_df["학년"], errors="coerce").dropna().shape[0] else 2
+        grade_series = pd.to_numeric(download_df["학년"], errors="coerce").dropna()
+        default_grade = int(grade_series.iloc[0]) if len(grade_series) else 2
 
         for cls in sorted([c for c in out_cols["반"].unique() if str(c).strip() != ""]):
             sheet_df = out_cols[out_cols["반"] == cls].copy()
-            # 정렬: 번호 오름차순
             sheet_df = sheet_df.sort_values(by="번호", ascending=True, na_position="last")
-            sheet_name = f"{default_grade}-{cls}"
-            # 엑셀 시트명 길이 제한(31)
-            sheet_name = sheet_name[:31]
+            sheet_name = f"{default_grade}-{cls}"[:31]
             sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
     buffer.seek(0)
