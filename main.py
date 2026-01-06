@@ -492,7 +492,7 @@ def adjust_classes_min_change_swap_only_v2(
 
         # 후보 이유 집계(진단용)
         reasons = {"same_class": 0, "not_movable": 0, "gender_comp_mismatch": 0, "hard_fail": 0, "no_improve": 0}
-
+        
         for cand in movable_blocks_for_fix:
             if cand == move_bid:
                 continue
@@ -627,6 +627,9 @@ def adjust_classes_min_change_swap_only_v2(
             diag_lines.append("  (조건대상 부족 또는 하드 규칙 때문에 이동/보정이 막힘)")
             raise ValueError("\n".join(diag_lines))
 
+    diag_lines.append("- FAIL: max_iters 도달(해결 못함)")
+    raise ValueError("\n".join(diag_lines))
+    
 # =============================
 # 세션 상태 초기화
 # =============================
