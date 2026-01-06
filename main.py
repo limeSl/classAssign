@@ -148,7 +148,12 @@ def render_class_tabs(
             if table_cols is None:
                 table_cols = [col for col in d.columns if not col.startswith("_")]
 
-            out = d[table_cols].copy()
+            existing_cols = [c for c in table_cols if c in d.columns]
+            missing_cols = [c for c in table_cols if c not in d.columns]
+            if missing_cols:
+                st.warning(f"표시용 컬럼 누락: {missing_cols}")
+
+            out = d[existing_cols].copy()
 
             if rename_map:
                 out = out.rename(columns=rename_map)
@@ -752,7 +757,31 @@ if run:
 # =============================
 if st.session_state.result_df is not None:
     res = st.session_state.result_df.copy()
-
+    if "반_원본" not in res.columns and "원본반" in res.columns:
+        res["반_원본"] = res["원본반"]
+    if "반_원본" not in res.columns:
+        # 최소한 현재 반을 원본으로 가정(임시)
+        res["반_원본"] = res.get("반", "")
+    
+    if "변경" not in res.columns:
+        res["변경"] = (res.get("반", "") != res.get("반_원본", ""))
+    
+    if "이전반(표시)" not in res.columns:
+        # 이전반_raw 또는 이전반이 있으면 표시 변환
+        if "이전반_raw" in res.columns:
+            res["이전반(표시)"] = res["이전반_raw"].map(format_prev_class_display)
+        elif "이전반" in res.columns:
+            res["이전반(표시)"] = res["이전반"].map(format_prev_class_display)
+        else:
+            res["이전반(표시)"] = ""
+    
+    if "조건대상" not in res.columns:
+        # 조건 리스트가 있다면 uid 기반으로 계산 가능
+        constrained_uids = {u for c in st.session_state.constraints for u in c.uids} if "constraints" in st.session_state else set()
+        if "_uid" in res.columns:
+            res["조건대상"] = res["_uid"].isin(constrained_uids)
+        else:
+            res["조건대상"] = False
     # 1) 설정
     st.subheader("설정(조정 결과 보기)")
     c1, c2 = st.columns([1, 2])
