@@ -489,7 +489,15 @@ if uploaded is not None:
     df = df[["학년", "반", "번호", "이름", "생년월일", "성별", "점수", "이전 반"]].copy()
     df["성별"] = df["성별"].apply(_norm_gender)
     df["UID"] = build_uid(df)
-    df["표시명"] = (df["이름"] + " (이전반 " + df["이전 반"] + ")" )
+    df["이전 반"] = df["이전 반"].astype(str).str.strip()
+    df["이전 반"] = "1-" + df["이전 반"]
+    df["표시명"] = (
+        df["이름"].astype(str).str.strip()
+        + " (이전반 "
+        + df["이전 반"]
+        + ")"
+    )
+    
     # 세션 저장 (원본 고정)
     st.session_state["df_original"] = df.copy()
 
