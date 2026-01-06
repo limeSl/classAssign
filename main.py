@@ -46,19 +46,11 @@ def _safe_str(x) -> str:
 
 
 def build_uid(df: pd.DataFrame) -> pd.Series:
-    # 이름 중복을 고려해서 생년월일+번호+원본행index로 유니크하게
-    # (엑셀에 학번이 없다고 하셔서 이렇게 생성)
-    base = (
-        df.index.astype(str)
-        + "|"
-        + df["이름"].astype(str)
-        + "|"
-        + df["생년월일"].astype(str)
-        + "|"
-        + df["번호"].astype(str)
+    return (
+        df["이전 학년"].astype(str).str.strip() + "-"
+        + df["이전 반"].astype(str).str.strip() + "-"
+        + df["이전 번호"].astype(str).str.strip()
     )
-    return base
-
 
 def display_name(df: pd.DataFrame) -> pd.Series:
     # 선택창에서 검색 편하도록 "이름 (반-번호, 생년월일)" 형태
@@ -416,7 +408,9 @@ if uploaded is not None:
         4: "생년월일",
         5: "성별",
         6: "점수",
+        7: "이전 학년",
         8: "이전 반",
+        9: "이전 번호",
     }
 
     df = raw.copy()
@@ -428,7 +422,7 @@ if uploaded is not None:
     df = df.rename(columns=rename)
 
     # 필요한 컬럼 존재 확인
-    needed = ["반", "번호", "이름", "생년월일", "성별", "점수", "이전 반"]
+    needed = ["반", "번호", "이름", "성별", "점수", "이전 학년", "이전 반", "이전 번호"]
     for c in needed:
         if c not in df.columns:
             st.error(f"필수 컬럼 '{c}'를 찾지 못했습니다. 엑셀 형식을 확인해주세요.")
