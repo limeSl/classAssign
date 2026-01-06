@@ -6,7 +6,20 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Set, Optional
 
 import pandas as pd
-import streamlit as st
+import streamlit as stValueError: - movable blocks: 2개 (조건대상 포함 블록만 이동 가능) [ITER 0] violation edge: (Sheet1:20,Sheet1:5) in class=1 - move_bid=Sheet1:20 (m=0, f=1, avg=517.8) from class 1 - candidates_same_comp: 0개 - candidates_relaxed: 0개 (하드 규칙 유지하는 swap 허용) - FAIL: swap 후보가 없음 reasons summary: {'same_class': 1, 'not_movable': 0, 'gender_comp_mismatch': 0, 'hard_fail': 0, 'no_improve': 0} tips: • 조건대상(이동 가능 학생)이 너무 적으면 해결이 불가할 수 있음 • 떨어뜨리기 조건이 동일 반에 이미 고정된 학생끼리 걸리면 해결 불가 • 완화 swap을 켰는데도 후보가 없다면 하드 규칙(인원/성비) 때문에 교환이 막힌 것
+Traceback:
+File "/mount/src/classassign/main.py", line 699, in <module>
+    assignment_block_to_class, diagnostics = adjust_classes_min_change_swap_only_v2(
+                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        df_all,
+        ^^^^^^^
+    ...<8 lines>...
+        max_iters=5000,
+        ^^^^^^^^^^^^^^^
+    )
+    ^
+File "/mount/src/classassign/main.py", line 497, in adjust_classes_min_change_swap_only_v2
+    raise ValueError("\n".join(diag_lines))
 
 # =============================
 # UI 기본
@@ -488,31 +501,71 @@ def adjust_classes_min_change_swap_only_v2(
 
         # 후보가 없으면 상세 진단 후 실패
         if not candidates_same and (not relax_gender_swap or not candidates_relax):
-            diag_lines.append("- FAIL: swap 후보가 없음")
-            diag_lines.append(f"  reasons summary: {reasons}")
-            diag_lines.append("  tips:")
-            diag_lines.append("   • 조건대상(이동 가능 학생)이 너무 적으면 해결이 불가할 수 있음")
-            diag_lines.append("   • 떨어뜨리기 조건이 동일 반에 이미 고정된 학생끼리 걸리면 해결 불가")
-            diag_lines.append("   • 완화 swap을 켰는데도 후보가 없다면 하드 규칙(인원/성비) 때문에 교환이 막힌 것")
+            diag_lines.append("- INFO: swap 후보가 없어 1-step move + 보정(swap) 모드 시도")
+        
+            # 1) move_bid를 다른 반으로 '이동' 시도 (조건대상만)
+            moved_ok = False
+            for target_cls in classes:
+                if target_cls == cur_cls:
+                    continue
+        
+                # move 시도
+                assignment_backup = dict(assignment)
+                assignment[move_bid] = target_cls
+        
+                # move 후 하드 규칙이 이미 OK면 그대로 채택
+                cnt = class_counts_from_assignment(assignment, blocks, df_index, classes)
+                if check_hard_rules(cnt, size_min, size_max, gender_diff_max):
+                    # 위반(edge)이 줄어드는지 확인
+                    if len(violates_not_same(assignment, not_same_edges)) < len(bad_edges):
+                        diag_lines.append(f"- MOVE: {move_bid} {cur_cls} → {target_cls} (보정 없이 해결)")
+                        moved_ok = True
+                        break
+        
+                # 2) 하드 규칙 깨졌다면: swap으로 보정
+                #    (우선 movable_blocks 안에서 찾고, 없으면 전체 블록에서 찾는다)
+                fix_pool_primary = list(movable_blocks)
+                fix_pool_fallback = list(blocks.keys())
+        
+                def try_fix(pool):
+                    nonlocal moved_ok
+                    for cand in pool:
+                        if cand == move_bid:
+                            continue
+                        # cand는 target_cls에 있어야 swap으로 인원/성비 조정이 가능
+                        if assignment[cand] != cur_cls:
+                            continue
+        
+                        hard_ok, edges_ok, _ = _swap_and_check(
+                            assignment, move_bid, cand, blocks, df_index, classes, not_same_edges,
+                            size_min, size_max, gender_diff_max
+                        )
+                        if not hard_ok or not edges_ok:
+                            continue
+        
+                        # score 유사도도 고려(가능하면)
+                        assignment[move_bid], assignment[cand] = assignment[cand], assignment[move_bid]
+                        diag_lines.append(f"- MOVE+SWAP FIX: {move_bid}→{target_cls} 후 {cand}와 swap으로 보정")
+                        moved_ok = True
+                        return
+        
+                try_fix(fix_pool_primary)
+                if not moved_ok:
+                    try_fix(fix_pool_fallback)
+        
+                if moved_ok:
+                    break
+        
+                # 실패하면 원복하고 다음 target_cls 시도
+                assignment = assignment_backup
+        
+            if moved_ok:
+                continue
+        
+            # move+fix도 안되면 실패
+            diag_lines.append("- FAIL: swap도 없고 move+보정도 불가")
+            diag_lines.append("  (조건대상 부족 또는 하드 규칙 때문에 이동/보정이 막힘)")
             raise ValueError("\n".join(diag_lines))
-
-        # 최종 후보 풀: 동일구성 우선, 없으면 완화 풀 사용
-        pool = candidates_same if candidates_same else candidates_relax
-        pool_type = "same_comp" if candidates_same else "relaxed"
-
-        # 성적 유사(점수 평균 차) 최소 선택
-        best = min(pool, key=lambda x: score_distance(stats_cache, move_bid, x))
-        best_cost = score_distance(stats_cache, move_bid, best)
-
-        diag_lines.append(f"- choose {pool_type} swap partner: {best} (score distance={best_cost})")
-
-        # swap 실행
-        cls_best = assignment[best]
-        assignment[move_bid], assignment[best] = cls_best, cur_cls
-
-    diag_lines.append("- FAIL: max_iters 도달. 조건을 만족시키지 못함")
-    raise ValueError("\n".join(diag_lines))
-
 
 # =============================
 # 세션 상태 초기화
