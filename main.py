@@ -77,6 +77,51 @@ def display_name(df: pd.DataFrame) -> pd.Series:
         + df["생년월일"].astype(str)
         + ")"
     )
+    
+def render_class_tabs(df: pd.DataFrame, highlight_uids: set | None = None):
+    """
+    반별 탭으로 학생 테이블 표시
+    - 반 컬럼은 테이블에서 제거
+    - 상단에 인원수 / 성비 / 평균성적 표시
+    - highlight_uids: 이동 학생 UID 집합 (없으면 하이라이트 없음)
+    """
+    classes = sorted(df["반"].unique().tolist())
+    tabs = st.tabs([f"{c}반" for c in classes])
+
+    for tab, cls in zip(tabs, classes):
+        with tab:
+            sub = df[df["반"] == cls].copy()
+
+            total = len(sub)
+            male = (sub["성별"] == "남").sum()
+            female = (sub["성별"] == "여").sum()
+            avg_score = round(sub["점수"].astype(float).mean(), 2) if total > 0 else 0
+
+            # 🔹 상단 요약
+            st.markdown(
+                f"""
+                **인원수:** {total}명  
+                **성비:** 남 {male} / 여 {female}  
+                **평균 성적:** {avg_score}
+                """
+            )
+
+            # 🔹 테이블 (반 컬럼 제거)
+            show_cols = [c for c in WEB_COL_ORDER if c != "반"]
+            temp = sub[show_cols + ["UID"]].copy()
+            temp = temp.sort_values("번호").reset_index(drop=True)
+
+            if highlight_uids:
+                styled = temp.style.apply(
+                    highlight_moved(highlight_uids), axis=1
+                )
+                st.dataframe(styled, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(
+                    temp.drop(columns=["UID"]),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 def to_web_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -447,7 +492,6 @@ if uploaded is not None:
     df = df[["학년", "반", "번호", "이름", "생년월일", "성별", "점수", "이전 반"]].copy()
     df["성별"] = df["성별"].apply(_norm_gender)
     df["UID"] = build_uid(df)
-    df["이전 반"] = "1-" + df.iloc[:, 8].astype(str).str.strip()
     df["표시명"] = display_name(df)
 
     # 세션 저장 (원본 고정)
@@ -457,7 +501,7 @@ if uploaded is not None:
     # 2. 업로드 하면 -> 반별 학생 테이블
     # =========================
     st.subheader("2. 업로드 결과(원본)")
-    st.dataframe(to_web_df(df), use_container_width=True)
+    render_class_tabs(df)
 
     # =========================
     # 3. 조건 추가 (학생 테이블 아래에 표시)
@@ -535,7 +579,7 @@ if uploaded is not None:
         temp = show_df[WEB_COL_ORDER + ["UID"]].copy()
         temp = temp.sort_values(["반", "번호"]).reset_index(drop=True)
         styled = temp.style.apply(highlight_moved(moved_uids), axis=1)
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        render_class_tabs(df)
 
         st.markdown("**조정된 학생 목록(원본과 위치가 변한 학생만)**")
         if moved_uids:
