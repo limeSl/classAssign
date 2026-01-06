@@ -564,6 +564,31 @@ if not frames:
     st.stop()
 
 df_all = pd.concat(frames, ignore_index=True)
+view_base = df_all.copy()
+
+# 이름 표시 모드 반영(업로드 화면용)
+# name_mode_before 라디오를 쓰고 있다면 그걸, 아니면 기본은 원본
+if "name_mode_before" in st.session_state:
+    nm = st.session_state.name_mode_before
+else:
+    nm = "원본"
+
+if "이름(원본)" in view_base.columns and "이름(한글만)" in view_base.columns:
+    view_base["이름"] = view_base["이름(한글만)"] if nm == "한글만" else view_base["이름(원본)"]
+elif "이름" not in view_base.columns:
+    # 최후 fallback
+    view_base["이름"] = view_base.get("이름(원본)", "")
+
+# 이전반 표시 컬럼 보장
+if "이전반(표시)" not in view_base.columns:
+    if "이전반_raw" in view_base.columns:
+        view_base["이전반(표시)"] = view_base["이전반_raw"].map(format_prev_class_display)
+    else:
+        view_base["이전반(표시)"] = ""
+
+# 업로드 화면 정렬(기본: 번호순)
+view_base = view_base.sort_values(by=["반", "번호"], ascending=[True, True], na_position="last")
+
 
 # ---- 업로드 직후(조정 전): 반 테이블만 표시 ----
 render_class_tabs(
