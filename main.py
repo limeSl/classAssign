@@ -46,11 +46,9 @@ def _safe_str(x) -> str:
 
 
 def build_uid(df: pd.DataFrame) -> pd.Series:
-    return (
-        df["이전 학년"].astype(str).str.strip() + "-"
-        + df["이전 반"].astype(str).str.strip() + "-"
-        + df["이전 번호"].astype(str).str.strip()
-    )
+    def norm(x):
+        return "" if pd.isna(x) else str(x).strip()
+    return df.apply(lambda r: f"{norm(r['이전 학년'])}-{norm(r['이전 반'])}-{norm(r['이전 번호'])}", axis=1)
 
 def display_name(df: pd.DataFrame) -> pd.Series:
     # 선택창에서 검색 편하도록 "이름 (반-번호, 생년월일)" 형태
@@ -396,7 +394,7 @@ if uploaded is not None:
     # 만약 사용자가 이미 한글 헤더로 저장해둔 경우도 지원.
     # 가장 안전: 컬럼 개수 기준으로 A/B/C... 위치로 재명명.
     if raw.shape[1] < 10:
-        st.error("엑셀 컬럼이 부족합니다. 최소 A~I(9개)까지 있어야 합니다.")
+        st.error("엑셀 컬럼이 부족합니다. 최소 A~J(10개)까지 있어야 합니다.")
         st.stop()
 
     # 위치 기반 재명명(A=0,...,I=8)
@@ -415,18 +413,20 @@ if uploaded is not None:
 
     df = raw.copy()
     # 먼저 전체를 문자열/기본형으로 두고 필요한 칼럼만 rename
-    rename = {}
-    for idx, newname in col_map_by_pos.items():
-        old = df.columns[idx]
-        rename[old] = newname
-    df = df.rename(columns=rename)
+    df2 = pd.DataFrame({
+        "학년": df.iloc[:, 0],
+        "반": df.iloc[:, 1],
+        "번호": df.iloc[:, 2],
+        "이름": df.iloc[:, 3],
+        "생년월일": df.iloc[:, 4],
+        "성별": df.iloc[:, 5],
+        "점수": df.iloc[:, 6],
+        "이전 학년": df.iloc[:, 7],
+        "이전 반": df.iloc[:, 8],
+        "이전 번호": df.iloc[:, 9] if df.shape[1] > 9 else "",
+    })
 
-    # 필요한 컬럼 존재 확인
-    needed = ["반", "번호", "이름", "성별", "점수", "이전 학년", "이전 반", "이전 번호"]
-    for c in needed:
-        if c not in df.columns:
-            st.error(f"필수 컬럼 '{c}'를 찾지 못했습니다. 엑셀 형식을 확인해주세요.")
-            st.stop()
+    df = df2
 
     # 정리
     df = df[["학년", "반", "번호", "이름", "생년월일", "성별", "점수", "이전 반"]].copy()
