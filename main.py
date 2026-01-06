@@ -818,6 +818,39 @@ if st.session_state.result_df is not None:
         },
         hide_cols=["조건대상", "변경"],
     )
+
+    # ✅ 반별 테이블(조정 결과) 아래: 조정된 학생 목록(원본 대비 반 변경)
+    st.subheader("🔁 조정된 학생 목록(원본 대비 반 변경)")
+    
+    # 변경 컬럼이 없으면 생성(안전)
+    if "변경" not in res.columns:
+        res["변경"] = (res["반"].astype(str) != res["반_원본"].astype(str))
+    
+    moved = res[res["변경"] == True].copy()
+    
+    # 보기 좋게 정렬: 원본반 → 조정반 → 번호
+    sort_cols = [c for c in ["반_원본", "반", "번호", "점수"] if c in moved.columns]
+    if sort_cols:
+        moved = moved.sort_values(by=sort_cols, ascending=[True, True, True, False][:len(sort_cols)], na_position="last")
+    
+    # 표시 컬럼(있는 것만)
+    moved_cols = [c for c in ["_excel_row", "반_원본", "반", "번호", "이름", "성별", "점수", "이전반(표시)"] if c in moved.columns]
+    moved_rename = {
+        "_excel_row": "엑셀행번호",
+        "반_원본": "원본반",
+        "반": "조정반",
+        "이전반(표시)": "이전반",
+    }
+    
+    if moved.empty:
+        st.info("조정된 학생이 없습니다. (원본 배정을 그대로 유지했습니다.)")
+    else:
+        st.dataframe(
+            moved[moved_cols].rename(columns=moved_rename),
+            use_container_width=True
+        )
+
+    
                 
     # =============================
     # 엑셀 다운로드 생성
