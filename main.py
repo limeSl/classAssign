@@ -10,7 +10,7 @@ import streamlit as st
 # 설정
 # =========================
 st.set_page_config(page_title="반편성 합시다.", layout="wide")
-st.title("반편성 합시다.")
+st.title("🏫반편성 합시다")
 
 REQUIRED_COLS = {
     "학년": "A",
@@ -395,7 +395,7 @@ if uploaded is not None:
     # 실제 헤더가 없거나 제각각일 수 있음 → 우선 컬럼명 그대로 사용하되,
     # 만약 사용자가 이미 한글 헤더로 저장해둔 경우도 지원.
     # 가장 안전: 컬럼 개수 기준으로 A/B/C... 위치로 재명명.
-    if raw.shape[1] < 9:
+    if raw.shape[1] < 10:
         st.error("엑셀 컬럼이 부족합니다. 최소 A~I(9개)까지 있어야 합니다.")
         st.stop()
 
