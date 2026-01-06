@@ -568,7 +568,7 @@ if uploaded is not None:
         df_adjusted = st.session_state["df_adjusted"]
         moved_uids = set(st.session_state.get("moved_uids", []))
 
-        st.markdown("**조정된 반별 학생 테이블**")
+        st.markdown("**조정 반별 테이블**")
         show_df = df_adjusted.copy()
         web_df = to_web_df(show_df)
 
@@ -577,7 +577,7 @@ if uploaded is not None:
         temp = show_df[WEB_COL_ORDER + ["UID"]].copy()
         temp = temp.sort_values(["반", "번호"]).reset_index(drop=True)
         styled = temp.style.apply(highlight_moved(moved_uids), axis=1)
-        render_class_tabs(df)
+        render_class_tabs(df_adjusted, moved_uids)
 
         st.markdown("**조정된 학생 목록(원본과 위치가 변한 학생만)**")
         if moved_uids:
