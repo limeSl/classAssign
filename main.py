@@ -493,7 +493,6 @@ if uploaded is not None:
     df["이전 반"] = "1-" + df["이전 반"]
     df["표시명"] = (
         df["이름"].astype(str).str.strip()
-        + " (이전반 "
         + df["이전 반"]
         + ")"
     )
