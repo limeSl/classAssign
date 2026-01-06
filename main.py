@@ -1,7 +1,7 @@
 import io
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
-
+import html
 import pandas as pd
 import streamlit as st
 
@@ -575,10 +575,11 @@ if uploaded is not None:
                 "border:1px solid rgba(255,255,255,0.6); "
                 "background-color: transparent; "
                 "font-size:0.9em;'>"
-                + str(name) +
+                + html.escape(str(name)) +
                 "</span>"
                 for name in names
             ])
+
         
             st.markdown(
                 f"""
@@ -596,12 +597,6 @@ if uploaded is not None:
                 unsafe_allow_html=True,
             )
         
-            # ✅ 개별 삭제
-            if st.button("🗑️ 이 조건 삭제", key=f"del_{idx}"):
-                del st.session_state["constraints"][idx]
-                st.rerun()
-    
-            # 🔻 개별 삭제 버튼
             if st.button("🗑️ 이 조건 삭제", key=f"del_{idx}"):
                 del st.session_state["constraints"][idx]
                 st.rerun()
