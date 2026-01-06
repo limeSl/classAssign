@@ -516,19 +516,6 @@ if uploaded is not None:
     if "picker_reset" not in st.session_state:
         st.session_state["picker_reset"] = 0
     
-    with st.container():
-        st.markdown(
-            """
-            <div style="
-                border: 2px dashed #aaa;
-                border-radius: 12px;
-                padding: 16px;
-                margin-bottom: 20px;
-            ">
-            """,
-            unsafe_allow_html=True,
-        )
-    
         col1, col2 = st.columns([1, 3])
     
         with col1:
@@ -592,7 +579,11 @@ if uploaded is not None:
                     <div style="font-weight:700; margin-bottom:8px;">{icon}</div>
                     <div>
                         {" ".join([
-                            f"<span style='display:inline-block; padding:4px 10px; margin:4px; border-radius:16px; background:#eee; font-size:0.9em;'>"
+                            f"<span style='display:inline-block; padding:4px 10px; margin:4px;
+                                border-radius:16px;
+                                border:1px solid rgba(255,255,255,0.6);
+                                background-color: transparent;
+                                font-size:0.9em;'>"
                             + name +
                             "</span>"
                             for name in names
