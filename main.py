@@ -781,11 +781,6 @@ if st.session_state.result_df is not None:
         rename_map={"_excel_row": "엑셀행번호", "반_원본": "원본반", "반": "조정반", "이전반(표시)": "이전반"},
         hide_cols=["조건대상", "변경"],  # ✅ 표에는 숨기되 스타일 판단에는 사용
     )
-        for tab, cls in zip(tabs, classes2):
-            with tab:
-                d = res[res["반"] == cls].copy()
-                dd = d[show_cols].rename(columns=rename_map)
-                st.dataframe(dd.style.apply(highlight_rows, axis=1),use_container_width=True)
                 
     # =============================
     # 엑셀 다운로드 생성
